@@ -1,0 +1,10 @@
+task,feature,n_train,groups,compounds,conflicting_groups,conflicting_compounds,conflicting_info_joint,conflicting_info_singles,conflicting_code_bits,conflicting_code_share,largest_n,largest_span,largest_dof,largest_info,largest_code_bits
+AMES,ECFP4,5093,365,757,2,4,0.291,0.9177,4.19,0.002989,7,0,0.01907,0.0005392,0.04171
+AMES,APDP,5093,575,1345,65,185,14.71,25.36,198.1,0.112,11,0,0.09237,0.01529,0.2342
+AMES,CheMeleon,5093,17,34,0,0,0,0,-0,-0,2,0,0.18,0.02084,0.06774
+Lipo,ECFP4,2940,62,132,2,4,0.07157,0.4027,5.327,0.00274,3,0.24,0.3842,0.08297,1.854
+Lipo,APDP,2940,123,277,6,23,1.999,2.002,36.43,0.01097,13,2.72,0.7052,0.4776,19.31
+Lipo,CheMeleon,2940,0,0,0,0,0,0,-0,-0,0,,,,
+AqSol,ECFP4,6986,285,736,81,292,9.529,22.44,345,0.08229,16,6.123,0.7259,0.6808,28.03
+AqSol,APDP,6986,593,1886,197,1002,36.88,39.84,1904,0.3197,149,11.93,0.7205,7.218,668.8
+AqSol,CheMeleon,6986,0,0,0,0,0,0,-0,-0,0,,,,

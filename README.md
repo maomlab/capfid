@@ -87,13 +87,30 @@ capacity_fidelity_plot(res, highlight=suspected_label_errors)
    `capfid.train_map(model, X, y, lik, alpha, adam_steps=0, lbfgs_iters=100)`.
 3. **Examples must be processed independently.** The model is put in eval mode; avoid
    batch norm in training mode.
-4. **Size.** The exact posterior needs about 8P² bytes and O(P³) time, which is practical up
-   to roughly P = 2 × 10⁴ parameters. For larger models, restrict the posterior to a subset,
-   for example the last layer:
+4. **Size.** `LinearizedLaplace` needs about 8P² bytes and O(P³) time, which is practical up
+   to roughly P = 2 × 10⁴ parameters. For wide networks with few training examples, use
+   `KernelLaplace`: it computes the identical posterior in the N·C-dimensional output space
+   through the empirical neural tangent kernel, in O((NC)³) time and about 24(NC)² bytes,
+   independent of P (an MLP with millions of parameters on several thousand examples takes
+   seconds to minutes). For networks whose parameters are all in `nn.Linear` layers, the
+   kernel is assembled without forming Jacobians (`capfid.ntk_gram`). Otherwise, restrict the
+   posterior to a subset, for example the last layer:
    `LinearizedLaplace(..., param_filter=lambda name: name.startswith("head"))`.
-5. **Likelihoods.** `Categorical()` takes class indices; `Gaussian(sigma)` takes targets
-   shaped like the outputs. For others, subclass `capfid.Likelihood` and implement
-   `log_lik` and `grad_hess`.
+5. **Likelihoods.** `Categorical()` takes class indices; `Bernoulli()` takes 0/1 targets for
+   sigmoid outputs; `Gaussian(sigma)` takes targets shaped like the outputs. For others,
+   subclass `capfid.Likelihood` and implement `log_lik`, `grad_hess` and `hess`.
+6. **Networks not trained to a MAP estimate** (dropout, early stopping, or a prior precision
+   chosen after training). Pass `prior_mean=` to `KernelLaplace` to center the posterior on
+   the MAP of the *linearized* network (a Gaussian process with the network's tangent kernel)
+   instead of on θ*. Unlearning is then exact for a Gaussian likelihood, and
+   `totals().log_evidence_nats` is the Gaussian-process marginal likelihood. Because a
+   trained network's kernel has been fit to the same labels, that marginal likelihood is
+   optimistic; choosing α (and σ) by the predictive likelihood of held-out data
+   (`la.predict(X_valid, y_valid)`) is safer. Without `prior_mean`, one-step unlearning
+   from a non-stationary θ* can produce very large spurious memorization scores.
+7. **New inputs.** `la.predict(X_new, y_new)` returns posterior predictions and each input's
+   prospective volume: the capacity it would occupy if added to the training data, which
+   needs no label.
 
 ## Reading the capacity–fidelity plot
 
@@ -114,6 +131,15 @@ capacity_fidelity_plot(res, highlight=suspected_label_errors)
   (`expected_fidelity_bits`) are pessimistic. Plug-in fidelity and the capacity measures are
   unaffected.
 
+## Case study: ADMET property prediction
+
+[`examples/tdc_casestudy/`](examples/tdc_casestudy/) trains dropout MLPs on three
+Therapeutics Data Commons tasks (AMES mutagenicity, AstraZeneca lipophilicity, AqSolDB
+solubility) with ECFP4, APDP and CheMeleon features, then uses `KernelLaplace` to find the
+compounds each model spends its capacity on, depicts them, and places them in UMAP embeddings
+of each dataset. See its README for the findings and how to rerun it (about 3 hours on
+10 CPU cores).
+
 ## Reproducing the manuscript
 
 ```bash
@@ -126,10 +152,12 @@ The LaTeX source is in [`paper/`](paper/).
 
 ## Tests
 
-`pytest` runs 16 tests, including exact checks against brute-force leave-one-out refits in
+`pytest` runs 31 tests, including exact checks against brute-force leave-one-out refits in
 Bayesian linear regression (information, held-out likelihood, the Bayes identity, the leverage
-formula, and the Newton step) and structural checks on a nonlinear classifier (leverage
-eigenvalues in [0, 1), Σ dof = γ, joint volume ≥ sum of single volumes, code-length identities).
+formula, and the Newton step), structural checks on a nonlinear classifier (leverage
+eigenvalues in [0, 1), Σ dof = γ, joint volume ≥ sum of single volumes, code-length
+identities), agreement of `KernelLaplace` with `LinearizedLaplace` for every quantity, and
+exact Gaussian-process leave-one-out and marginal likelihood for the refit posterior.
 
 ## Citation
 

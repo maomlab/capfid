@@ -1,0 +1,17 @@
+# Case-study dependencies (in addition to capfid and torch). Python >= 3.11 (chemprop).
+#   pip install -e ".[examples]" -r examples/tdc_casestudy/requirements.txt
+#   pip install --no-deps PyTDC==0.4.1      # newer PyTDC releases pin many unrelated packages
+rdkit>=2024.3
+chemprop>=2.2
+umap-learn>=0.5
+pandas>=2
+scipy>=1.10
+scikit-learn>=1.2
+matplotlib>=3.5
+# imported by PyTDC 0.4.1
+fuzzywuzzy
+huggingface_hub<1.0
+requests
+tqdm
+seaborn
+setuptools<81

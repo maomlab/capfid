@@ -56,7 +56,7 @@ Per-Example Capacity versus Fidelity via Linearized Laplace Unlearning}
 \maketitle
 
 \begin{abstract}
-The compression/fidelity trade-off is usually stated for a whole model: parameters are a code whose length is traded against the code length of the data given those parameters. We ask the per-example version of the question: how much of a trained network's capacity is spent on each training example (or set of examples), and how well is that example fit? We define capacity by \emph{unlearning}: the change in a linearized Laplace posterior over the weights when an example is removed, measured as (i) the effective number of parameters it determines, (ii) the drop in posterior differential entropy (a label-agnostic \emph{volume}), and (iii) the Kullback--Leibler divergence between the posteriors with and without it (the label-dependent \emph{information} actually stored). All three reduce to $C\times C$ output-space matrices, so every example is scored after a single factorization, and arbitrary sets are scored jointly. Under exact Bayesian updating, information capacity equals the example's generalization gap (training minus held-out log-likelihood); volume equals the mutual information between weights and label for Gaussian likelihoods; and volume is submodular, which yields a redundancy ratio for sets. In a closed-form linear model all identities hold to $10^{-13}$ bits. On a two-moons MLP with 10\% flipped labels, sweeping the prior precision moves flipped examples from \emph{ignored} (low fidelity, $\sim$0.08 bits each) to \emph{memorized} (high fidelity, $\sim$1.6 bits each), while the Laplace evidence favors the most compressed model. On a 4{,}130-parameter vision transformer trained on $8\times 8$ digits with 5\% flipped labels, flipped examples cost a median of 3.5 bits versus 0.05 bits for clean ones, 14 of the 16 most expensive images are flips, and capacity rank-correlates with memorization measured by actual retraining (Spearman 0.84--0.88). The one-step held-out prediction, however, overestimates the effect of removing heavily memorized examples by up to several-fold, which we document as the main limitation.\ifanonymous\else{} Code: \coderepo.\fi
+The compression/fidelity trade-off is usually stated for a whole model: parameters are a code whose length is traded against the code length of the data given those parameters. We ask the per-example version of the question: how much of a trained network's capacity is spent on each training example (or set of examples), and how well is that example fit? We define capacity by \emph{unlearning}: the change in a linearized Laplace posterior over the weights when an example is removed, measured as (i) the effective number of parameters it determines, (ii) the drop in posterior differential entropy (a label-agnostic \emph{volume}), and (iii) the Kullback--Leibler divergence between the posteriors with and without it (the label-dependent \emph{information} actually stored). All three reduce to $C\times C$ output-space matrices, so every example is scored after a single factorization, and arbitrary sets are scored jointly. Under exact Bayesian updating, information capacity equals the example's generalization gap (training minus held-out log-likelihood); volume equals the mutual information between weights and label for Gaussian likelihoods; and volume is submodular, which yields a redundancy ratio for sets. In a closed-form linear model all identities hold to $10^{-13}$ bits. On a two-moons MLP with 10\% flipped labels, sweeping the prior precision moves flipped examples from \emph{ignored} (low fidelity, $\sim$0.08 bits each) to \emph{memorized} (high fidelity, $\sim$1.6 bits each), while the Laplace evidence favors the most compressed model. On a 4{,}130-parameter vision transformer trained on $8\times 8$ digits with 5\% flipped labels, flipped examples cost a median of 3.5 bits versus 0.05 bits for clean ones, 14 of the 16 most expensive images are flips, and capacity rank-correlates with memorization measured by actual retraining (Spearman 0.84--0.88). The one-step held-out prediction, however, overestimates the effect of removing heavily memorized examples by up to several-fold, which we document as the main limitation. Computing the posterior in output space through the empirical neural tangent kernel removes the dependence on the number of parameters, which lets us analyze 18 molecular property-prediction networks of up to 4.2 million parameters: capacity ranks the compounds those networks memorize, as measured by 864 retrainings (Spearman 0.38--0.73), and the compounds it flags are label conflicts with structural alerts, ionizable compounds whose $\log D$ the representations cannot express, inorganic salts, and groups of compounds that a fingerprint maps to one vector but whose labels span six log units.\ifanonymous\else{} Code: \coderepo.\fi
 \end{abstract}
 
 \section{Introduction}
@@ -69,6 +69,7 @@ Two families of tools approximate pieces of this picture. Influence functions es
 \item We define three nested per-example (and per-set) capacity measures by Laplace unlearning: effective degrees of freedom, volume (entropy drop), and information (KL), and show they reduce exactly to $C\times C$ output-space quantities (\cref{prop:reduction}).
 \item We prove or collect identities that give them meaning: information equals the generalization gap under exact Bayesian updating (\cref{prop:bayes}); volume equals the weight--label mutual information for Gaussian likelihoods and the leverage formula $-\tfrac12\log(1-h_{ii})$ in linear regression; per-example degrees of freedom sum to MacKay's effective number of parameters; and volume is submodular, giving a redundancy ratio $\ge 1$ for sets and an upper bound on the fraction of model information attributable to single examples (\cref{prop:submod}).
 \item We connect the totals to a Laplace two-part MDL code (\cref{sec:mdl}) and demonstrate the diagnostic on an exactly solvable model, an MLP under a prior-precision sweep, and a small vision transformer, validating against warm-started retraining and documenting where the approximation fails.
+\item We compute the same posterior in output space through the empirical neural tangent kernel, at a cost independent of the number of parameters, and refit its mean for networks that are not at a stationary point, such as those trained with dropout or early stopping (\cref{sec:kernel}). This makes the analysis practical for networks with millions of parameters and a few thousand training examples, which we use for a case study of molecular property prediction (\cref{sec:tdc}).
 \end{itemize}
 
 \section{Background and related work}
@@ -168,8 +169,19 @@ The Laplace log evidence decomposes as $-\log p(\D)\approx L_{\text{data}}+L_{\t
 \end{algorithm}
 \Cref{alg:main} costs $O(NCP^2+P^3)$ time and $O(P^2+NCP)$ memory for the exact GGN; set capacities need one extra triangular solve with $J_S\T$. Expectations over $q$ use Monte Carlo with common random numbers. The method is implemented in the open-source PyTorch package \texttt{capfid} (see Code availability). For larger models, only $J_i\Sigma J_i\T$ is needed, so Kronecker-factored, last-layer, or low-rank curvature can be substituted \citep{martens2015,ritter2018,daxberger2021}.
 
+\subsection{Wide networks: computation in output space}\label{sec:kernel}
+Every quantity above needs only blocks of $J\Sigma J\T$ and $\logdet(I+\mathrm{GGN}/\alpha)$. With the empirical neural tangent kernel $G=JJ\T\in\mathbb{R}^{NC\times NC}$ \citep{jacot2018}, $\Lambda=\mathrm{blkdiag}(\Lambda_i)$, and $M=\alpha I+\Lambda^{1/2}G\Lambda^{1/2}$, the Woodbury and Sylvester identities give
+\begin{align}
+J\Sigma J\T&=\alpha^{-1}\big[G-G\Lambda^{1/2}M^{-1}\Lambda^{1/2}G\big],\notag\\
+\logdet\!\big(I+\tfrac{\mathrm{GGN}}{\alpha}\big)&=\logdet\tfrac{M}{\alpha}.
+\label{eq:kernel}
+\end{align}
+One Cholesky factorization of $M$ therefore yields the identical posterior in $O((NC)^3)$ time, independent of $P$: the exact Laplace posterior of a network with millions of parameters is available whenever the training set has a few thousand examples. For a linear layer $z=Wa+b$, $\partial f_c/\partial W=\delta_c a\T$ with $\delta_c=\partial f_c/\partial z$, so for a multilayer perceptron $G=\sum_\ell(\Delta_\ell\Delta_\ell\T)\odot(A_\ell A_\ell\T+\mathbf{1})$ is assembled from layer inputs $A_\ell$ and output gradients $\Delta_\ell$ in one forward and $C$ backward passes, without forming $J$. The same algebra at a new input $x$ gives the posterior output covariance $J_x\Sigma J_x\T$ and a label-free \emph{prospective volume} $\tfrac12\logdet(I+\Lambda_x^{1/2}J_x\Sigma J_x\T\Lambda_x^{1/2})=h(q_\D)-h(q_{\D\cup\{x\}})$, the capacity $x$ would occupy if it were added to the training set; for a Gaussian likelihood it is the mutual information between the unseen label and the weights.
+
+\paragraph{Networks not trained to a mode.} \Cref{eq:unlearn} assumes $\nabla L(\theta^*)=0$. Networks trained with dropout or early stopping, or analyzed with a prior precision chosen after training, violate this, and a Newton step from $\theta^*$ then credits the residual gradient to whichever example is removed: high-leverage examples that the network did not fit receive enormous spurious memorization. We therefore center the posterior on the MAP of the linearized network $f(x;\theta^*)+J_x(\theta-\theta^*)$ instead. Viewing the linearized network as a Gaussian process with kernel $G/\alpha$ \citep{khan2019,immer2021} and a constant prior mean $m$ (we use the training-set average), this MAP is the posterior mode $\hat f$ at the training inputs, found by Newton's method \citep[Alg.~3.1]{rasmussen2006}. Residuals and curvatures are evaluated at $\hat f$, and \cref{prop:reduction} applies unchanged. For a Gaussian likelihood a single step is exact, unlearning becomes exact Gaussian-process leave-one-out, \cref{prop:bayes} holds exactly, and the Laplace evidence is the Gaussian-process marginal likelihood. Because the kernel $G$ of a trained network has itself been fit to the training labels, maximizing that marginal likelihood over the noise $\sigma$ lets the kernel absorb label noise as signal; we therefore choose $\alpha$ by the marginal likelihood but $\sigma$ by held-out data (\cref{sec:tdc-setup}).
+
 \section{Experiments}
-All experiments ran on a single CPU core in double-precision Laplace algebra; details are in \cref{app:details}.
+The experiments in this section ran on a single CPU core in double-precision Laplace algebra; details are in \cref{app:details}. The case study of \cref{sec:tdc} is larger and is described in \cref{app:tdc}.
 
 \subsection{Exact check: Bayesian linear regression}
 We fit $N=200$ noisy samples of $\sin(2x)$ with $P=40$ random Fourier features ($\sigma=0.3$, $\alpha=1$; five targets shifted by $+2$ as outliers) and compared \cref{prop:reduction,prop:bayes} and \cref{cor:mi} with brute-force refits without each point (\cref{tab:exact}). All agree to numerical precision. Per-example degrees of freedom sum to $\tr H=9.091$ effective parameters, and outliers carry a mean of 1.34 bits versus 0.044 bits for inliers.
@@ -265,6 +277,138 @@ For 40 MLP examples ($\alpha=0.2$; the 20 highest-capacity and 20 random) and 28
 \label{fig:val}
 \end{figure*}
 
+\section{Case study: molecular property prediction}\label{sec:tdc}
+Molecular property data sets are small, assembled from assays with limited reproducibility, often pooled across laboratories, and full of activity cliffs, where near-identical structures have very different properties. They are therefore a natural setting for asking which training compounds a model spends capacity on. We applied capfid to dropout MLPs, a standard baseline for these tasks, using the output-space computation of \cref{sec:kernel}.
+
+\subsection{Setup}\label{sec:tdc-setup}
+\paragraph{Tasks.} Three Therapeutics Data Commons ADMET benchmark tasks \citep{huang2021} with the benchmark's scaffold split (seed 1): AMES mutagenicity \citep{xu2012}, a binary task compiled from several public sources (5{,}093/728/1{,}457 train/validation/test compounds); Lipophilicity\_AstraZeneca \citep{astrazeneca2016,wu2018}, octanol/water $\log D_{7.4}$ measured in a single laboratory (2{,}940/420/840); and Solubility\_AqSolDB \citep{sorkun2019}, aqueous solubility $\log S$ curated from nine public sources (6{,}986/999/1{,}995; two test SMILES that RDKit could not parse were dropped).
+
+\paragraph{Features.} ECFP4 \citep{rogers2010} (Morgan radius 2, 2{,}048 bits); APDP, atom pairs \citep{carhart1985} together with Sheridan's donor/acceptor binding-property pairs \citep{kearsley1996,sheridan2019}, folded into 2{,}048 bits; and CheMeleon \citep{burns2025}, the 2{,}048-dimensional embedding of a Chemprop message-passing network \citep{heid2024} pretrained to predict Mordred descriptors \citep{moriwaki2018}, standardized on the training set.
+
+\paragraph{Models.} ReLU MLPs with dropout \citep{srivastava2014} after every hidden layer and one output (a logit, or the mean of standardized targets), trained by minibatch Adam with weight decay. For each task and featurization we drew the same 24 configurations at random (width, depth, dropout, weight decay, learning rate; \cref{app:tdc}), trained each with early stopping on the validation metric (AUROC for AMES, MAE otherwise), and kept the best. Models have 0.6--4.2 million parameters. We analyze two training regimes with the selected configuration: \emph{early}, stopped at the selected epoch, and \emph{long}, trained for 100 epochs.
+
+\paragraph{Posterior.} For each trained network we computed the empirical NTK Gram matrix over the training set and the refit posterior of \cref{sec:kernel} with a Bernoulli (AMES) or Gaussian likelihood. The prior precision $\alpha$ maximized the training-set Gaussian-process marginal likelihood (Laplace for AMES). For regression, the noise $\sigma$ maximized the predictive likelihood of the validation split with $\alpha$ profiled out. Maximizing the training marginal likelihood over $\sigma$ as well double-dips, because the tangent kernel was fit to the same labels: it chose $\sigma=0.09$--$0.52$ for $\log D$ and $0.39$--$0.93$ for $\log S$ (versus $0.61$--$0.87$ and $1.00$--$1.39$ from the validation split), and its test predictions were overconfident, with standardized test residuals of standard deviation 1.3--3.7 (versus 0.89--1.00). Each posterior, including hyperparameter selection (a median 80\% of the time), took 35\,s (Lipophilicity) to 7\,min (AMES, AqSolDB) on three CPU threads. We analyzed three training seeds of each early-stopped network and two of each long-trained one; per-compound results use seed 0.
+
+\paragraph{Memorization by retraining.} To test capacity against the networks themselves rather than their linearization, we trained 48 networks per task, featurization and regime on random 70\% subsets of the training set with new seeds, and measured the memorization of each compound as its mean $\log_2$-likelihood under networks that saw it minus networks that did not \citep{feldman2020neural}.
+
+\paragraph{Key compounds.} To pick compounds without hand selection, we ranked training compounds by the percentile of $\Inf(\{i\})$ under each featurization's early-stopped model and took (i) the four with the highest mean percentile (\emph{consensus}); (ii) for each featurization, the compound in its top 1\% whose percentile most exceeds the larger of the other two (\emph{specific}); and (iii) among compounds with below-median information, the one with the highest mean volume percentile (\emph{atypical}). We depict them with their nearest training neighbor by ECFP4 Tanimoto similarity (Tc) and place them in UMAP embeddings \citep{mcinnes2018} of each feature space.
+
+\begin{table*}[t]
+\centering\small
+\setlength{\tabcolsep}{4.2pt}
+\caption{\textbf{Case-study models.} Test metric: AUROC for AMES (higher is better), MAE in log units otherwise, for the network (mean of three seeds) and for the refit posterior mean (seed 0). $\gamma$: effective parameters. $L/N$: Laplace two-part code length per training compound in bits (continuous for regression, so comparable only within a task). Memorization: totals over training compounds of capfid's information $\Inf(\{i\})$ and of memorization measured by retraining. Spearman $\rho$: per-compound memorization by retraining against $\Inf(\{i\})$ of the refit posterior (refit) or against one-step memorization $F_i-F_i^{-}$ from $\theta^*$ (one step); and $\Inf(\{i\})$ for two training seeds (seeds).}\label{tab:tdc}
+\begin{tabular}{@{}lllrrrrrrrrrr@{}}
+\toprule
+ & & & & \multicolumn{2}{c}{test metric} & & & \multicolumn{2}{c}{memorization (bits)} & \multicolumn{3}{c}{Spearman $\rho$}\\
+\cmidrule(lr){5-6}\cmidrule(lr){9-10}\cmidrule(l){11-13}
+Task & Features & Regime & Epochs & network & refit & $\gamma$ & $L/N$ & capfid & retraining & refit & one step & seeds\\
+\midrule
+AMES & ECFP4 & early & 1 & 0.804 & 0.804 & 679 & 0.49 & 433 & 688 & 0.59 & 0.68 & 0.94 \\
+ &  & long & 100 & 0.803 & 0.805 & 284 & 0.06 & 22 & 9{,}208 & 0.67 & 0.42 & 0.66 \\
+ & APDP & early & 5 & 0.758 & 0.774 & 595 & 0.54 & 375 & 1{,}033 & 0.53 & 0.64 & 0.93 \\
+ &  & long & 100 & 0.716 & 0.731 & 381 & 0.14 & 90 & 11{,}980 & 0.56 & 0.51 & 0.59 \\
+ & CheMeleon & early & 4 & 0.837 & 0.833 & 825 & 0.31 & 399 & 2{,}106 & 0.68 & 0.75 & 0.95 \\
+ &  & long & 100 & 0.820 & 0.830 & 542 & 0.13 & 86 & 7{,}864 & 0.71 & 0.59 & 0.86 \\
+\addlinespace
+Lipo & ECFP4 & early & 72 & 0.628 & 0.620 & 560 & 0.97 & 92 & 2{,}529 & 0.38 & 0.10 & 0.78 \\
+ &  & long & 100 & 0.623 & 0.620 & 566 & 1.00 & 96 & 2{,}456 & 0.41 & 0.10 & 0.76 \\
+ & APDP & early & 11 & 0.669 & 0.681 & 420 & 1.38 & 189 & 813 & 0.65 & 0.61 & 0.91 \\
+ &  & long & 100 & 0.678 & 0.698 & 520 & 1.29 & 102 & 1{,}854 & 0.44 & 0.20 & 0.70 \\
+ & CheMeleon & early & 72 & 0.551 & 0.543 & 369 & 0.59 & 41 & 2{,}191 & 0.61 & 0.31 & 0.78 \\
+ &  & long & 100 & 0.554 & 0.542 & 372 & 0.59 & 40 & 2{,}197 & 0.60 & 0.28 & 0.79 \\
+\addlinespace
+AqSol & ECFP4 & early & 34 & 1.145 & 1.155 & 1233 & 0.89 & 242 & 4{,}351 & 0.51 & 0.34 & 0.83 \\
+ &  & long & 100 & 1.127 & 1.156 & 1265 & 0.89 & 271 & 4{,}491 & 0.49 & 0.27 & 0.80 \\
+ & APDP & early & 84 & 1.066 & 1.070 & 745 & 1.04 & 165 & 2{,}537 & 0.73 & 0.61 & 0.85 \\
+ &  & long & 100 & 1.075 & 1.065 & 780 & 1.02 & 177 & 2{,}755 & 0.71 & 0.60 & 0.84 \\
+ & CheMeleon & early & 5 & 0.825 & 0.801 & 754 & 0.64 & 368 & 2{,}487 & 0.71 & 0.65 & 0.95 \\
+ &  & long & 100 & 0.885 & 0.864 & 780 & 0.50 & 146 & 4{,}189 & 0.70 & 0.52 & 0.86 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.94\textwidth]{figures/fig4_tdc_validation.png}
+\caption{\textbf{Capacity versus memorization measured by retraining}, one point per training compound, for each task (rows) and featurization (colors); lines connect medians of twelve equal-count bins; $\rho$ is Spearman's correlation. Left, middle: information $\Inf(\{i\})$ of the refit posterior for early-stopped and 100-epoch networks (values below $10^{-4}$ bits are drawn at $10^{-4}$). Right: one-step memorization $F_i-F_i^{-}$ computed from the trained network $\theta^*$ without refitting (symmetric-log axis; it can be negative because $\nabla L(\theta^*)\neq0$).}
+\label{fig:tdc-val}
+\end{figure*}
+
+\subsection{Models, posteriors, and validation}
+The selected networks reached test AUROC 0.76--0.84 on AMES and MAE 0.55--0.67 $\log D$ and 0.82--1.15 $\log S$ (\cref{tab:tdc}); CheMeleon features were best on all three tasks. The refit posterior mean, which is what capfid analyzes, matched the networks' test metrics to within 0.016 AUROC and 0.03 log units. Posteriors were stable across training seeds: $\alpha$ varied by at most 25\% and $\gamma$ by at most 7\% (coefficient of variation), and per-compound information was rank-correlated between seeds at 0.76--0.95 except for the long-trained AMES networks (0.59--0.86), whose posteriors store almost nothing about most compounds. Rankings were robust to a tenfold weaker prior (Spearman $\ge0.66$ with the selected one) but less so to a tenfold stronger prior (0.32--0.996), which moves compounds from memorized to ignored as in the two-moons sweep.
+
+Per-compound information rank-correlated with memorization measured by retraining at $\rho=0.53$--$0.71$ for AMES, 0.38--0.65 for Lipophilicity and 0.49--0.73 for AqSolDB (\cref{fig:tdc-val}). The one-step estimate from the trained network, which ignores that dropout and early stopping leave $\nabla L(\theta^*)\neq0$, did better only for the three early-stopped AMES networks (trained for 1--5 epochs) and worse for the other 15 models, with values up to 226 bits for single compounds. The magnitudes differ sharply. Summed over compounds, the networks memorized 4 to 400 times more, measured by retraining, than the refit posterior stores (\cref{tab:tdc}). The posterior is a calibrated surrogate whose prior and noise are chosen to predict held-out compounds, whereas the networks interpolate their training labels (train MAE 0.11--0.15 $\log D$ against a validation-selected $\sigma$ of 0.61--0.87). The posterior also conditions on the network's tangent features, so label information that training has already written into those features is not counted. Training AMES networks to 100 epochs shows this most clearly: memorization by retraining grew 4--13-fold, while the posterior's total information fell 5--20-fold and $\gamma$ fell by a third or more, because the 100-epoch features separate the training labels on their own ($L/N$ drops to 0.06--0.14 bits). capfid's ranking of compounds is therefore informative across regimes, but its totals compare models only within a training regime.
+
+\begin{figure*}[p]
+\centering
+\includegraphics[width=0.92\textwidth]{figures/fig5_tdc_ames.png}
+\caption{\textbf{AMES mutagenicity.} Top: UMAP embeddings \citep{mcinnes2018} of all compounds in each feature space (Jaccard distance for fingerprints, Euclidean for standardized CheMeleon embeddings). Training compounds are colored by the information $\Inf(\{i\})$ that the early-stopped model's posterior stores; validation and test compounds are gray. Bottom: key compounds (circled above). Slash-separated values are for ECFP4/APDP/CheMeleon; ``pred'' is the network's prediction (here, the probability of a positive); ``nearest'' is the most similar other training compound by ECFP4 Tanimoto similarity, with its label.}
+\label{fig:tdc-ames}
+\end{figure*}
+
+\begin{figure*}[p]
+\centering
+\includegraphics[width=0.92\textwidth]{figures/fig6_tdc_lipo.png}
+\caption{\textbf{AstraZeneca lipophilicity} ($\log D_{7.4}$); layout as in \cref{fig:tdc-ames}.}
+\label{fig:tdc-lipo}
+\end{figure*}
+
+\begin{figure*}[p]
+\centering
+\includegraphics[width=0.92\textwidth]{figures/fig7_tdc_aqsol.png}
+\caption{\textbf{AqSolDB aqueous solubility} ($\log S$, mol/L); layout as in \cref{fig:tdc-ames}. Compound 3 (aluminium sulfate hydrate) is drawn apart from the main APDP cloud because its APDP vector is nearly empty.}
+\label{fig:tdc-aqsol}
+\end{figure*}
+
+\subsection{What the models spend capacity on}
+\paragraph{AMES: conflicts with structural alerts.} Every one of the 20 compounds with the highest consensus information is mispredicted by all three networks, and 81\% of the top 100 have a training neighbor with Tc $\ge0.5$ and the opposite label, against 15\% of all training compounds (\cref{fig:tdc-ames}). Most are negatives that carry classical mutagenicity alerts (aryl azides, nitroarenes, aromatic C- and N-nitroso groups, epoxides), and the rest are alert-free positives. The top compound is a diazido-acridine labeled negative whose regioisomer (Tc 0.91) is labeled positive; others are a dinitrophenazine (negative) whose mononitro analogue (Tc 0.88) is positive and prednisone (positive; prednisolone, Tc 0.68, is negative). These are either errors in labels pooled from several sources or real exceptions such as positional effects on metabolic activation; the model cannot tell which, but it isolates a few dozen compounds that an expert can check. Featurization-specific compounds show where a representation, rather than the label, is the problem: compound 5 has no ECFP4 neighbor above Tc 0.26 and costs 1.8 bits under ECFP4 but under 0.01 bits under the other two featurizations.
+
+\paragraph{Lipophilicity: ionization.} The highest-capacity compounds are almost all acids, bases, zwitterions or permanent cations, whose $\log D_{7.4}$ departs from intrinsic lipophilicity by an amount set by their $\mathrm{p}K_a$, which none of the representations encodes directly (\cref{fig:tdc-lipo}). Several are ionization cliffs: a carboxylic acid at $\log D=-0.87$ whose methyl ester (Tc 0.88) is at 2.72, and 2-phenylquinoline-4-carboxylic acid ($-0.70$) next to 2-phenylquinolin-4-ol (2.54). Two labels look wrong: 8-hydroxyquinoline-2-carboxylic acid at 3.30 is unexpectedly high for an acid at pH 7.4, and a phosphonooxy amino acid that is multiply charged at pH 7.4 is recorded at 2.50. The same compounds show the capacity--fidelity taxonomy across models. The APDP network (11 epochs, train MAE 0.49) predicts about 1 log unit for all of them and so ignores them, whereas the ECFP4 and CheMeleon networks (72 epochs, train MAE 0.13--0.15) fit them and memorize them, by up to 27 and 59 bits respectively by retraining.
+
+\paragraph{AqSolDB: inorganic compounds and errors.} Salts, metal compounds and other inorganics are 14\% of the training set but 56--74\% of each model's top 1\% by information (\cref{fig:tdc-aqsol}). Two consensus compounds are recorded as nearly insoluble although both are freely water-soluble salts: sodium 4-hydroxybenzenesulfonate ($\log S=-8.36$) and aluminium sulfate hydrate ($-7.50$).
+
+\begin{table}[t]
+\centering\small
+\setlength{\tabcolsep}{3pt}
+\caption{\textbf{Representation collisions}: groups ($\ge2$) of training compounds with identical feature vectors. A group conflicts if its labels differ (AMES) or span more than 1 log unit. Code: mean data code length $-\log_2p(y_i\mid\hat f_i)$ per compound (bits) for members of conflicting groups versus all other compounds (early-stopped models).}\label{tab:collisions}
+\begin{tabular}{@{}llrrrrr@{}}
+\toprule
+ & & \multicolumn{2}{c}{all groups} & \multicolumn{2}{c}{conflicting} & \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}
+Task & Features & groups & cpds & groups & cpds & code\\
+\midrule
+AMES & ECFP4 & 365 & 757 & 2 & 4 & 1.05 / 0.27\\
+ & APDP & 575 & 1{,}345 & 65 & 185 & 1.07 / 0.32\\
+ & CheMeleon & 17 & 34 & 0 & 0 & -- / 0.08\\
+Lipo & ECFP4 & 62 & 132 & 2 & 4 & 1.33 / 0.66\\
+ & APDP & 123 & 277 & 6 & 23 & 1.58 / 1.13\\
+ & CheMeleon & 0 & 0 & 0 & 0 & -- / 0.39\\
+AqSol & ECFP4 & 285 & 736 & 81 & 292 & 1.18 / 0.57\\
+ & APDP & 593 & 1{,}886 & 197 & 1{,}002 & 1.90 / 0.68\\
+ & CheMeleon & 0 & 0 & 0 & 0 & -- / 0.46\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Representation collisions.} Featurization-specific compounds often have an identical twin: n-hexyl acetate (compound 5 in \cref{fig:tdc-aqsol}) has the same ECFP4 vector as a training compound two log units less soluble. Binary ECFP4 at radius 2 cannot count methylene groups, so homologous series collapse: 16 n-alkanols from C$_6$ to C$_{24}$ share one vector and span 6 log units, and n-alkanes, fatty acids and their esters behave alike. APDP is empty for compounds whose fragments are single atoms and folds polychlorinated biphenyl congeners together. CheMeleon separates nearly all compounds (\cref{tab:collisions}). Per-compound scores understate such groups, because each member is redundant with the rest, so we scored each group jointly with \texttt{set\_capacity}. The 149 AqSolDB compounds with an all-zero APDP vector, from chromium metal ($\log S=-10.0$) to ammonium bromide ($+1.9$), jointly determine 0.72 effective parameters and store 7.2 bits, yet cost 669 bits of data code: the model predicts their mean and ignores them as a set. Members of conflicting groups cost 1.4--3.8 times as many bits per compound as other compounds and account for 32\% of the APDP model's AqSolDB data code. No amount of capacity can fit these labels; only a better representation can.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.94\textwidth]{figures/fig8_tdc_generalization.png}
+\caption{\textbf{Capacity and generalization.} Top: mean absolute test error (probability for AMES) of the early-stopped networks in quintiles of each test compound's prospective volume, which requires no label; $\rho$ is Spearman's correlation over test compounds. Bottom: distribution of the information stored per training compound, early-stopped (solid) versus 100-epoch (dashed) networks.}
+\label{fig:tdc-gen}
+\end{figure*}
+
+\subsection{Generalization}
+\paragraph{Prospective volume flags uncertain test compounds.} The prospective volume of a test compound, the capacity it would occupy if added to the training set, requires no label. For AMES it rank-correlated with the networks' absolute test error at $\rho=0.57$--$0.67$, and the highest-volume quintile had about three times the error of the lowest (\cref{fig:tdc-gen}). Part of this signal is the predicted probability, since volume grows with the curvature $p(1-p)$. For regression, where volume depends on the input alone, the correlation was weak ($\rho=0.06$--$0.21$): most test error in these tasks comes from label noise and cliffs that the posterior regards as aleatoric, not from compounds far from the training set.
+
+\paragraph{Memorization from longer training did not pay.} Training AMES networks to 100 epochs instead of the validation-selected 1--5 multiplied their memorization by retraining by 4--13 (\cref{tab:tdc}) and drove training AUROC to 1.00, but test AUROC changed by $-0.001$ (ECFP4), $-0.042$ (APDP) and $-0.017$ (CheMeleon). On AqSolDB the CheMeleon network trained to 100 epochs instead of 5 lowered its training MAE from 0.56 to 0.32 and raised its test MAE from 0.83 to 0.89, while memorization by retraining rose from 2{,}487 to 4{,}189 bits. Where the selected epoch count was already near 100 (Lipophilicity ECFP4 and CheMeleon), nothing changed. capfid's per-compound ranking was largely preserved between regimes (Spearman 0.56--0.88), so the compounds memorized by longer training are mostly those that already cost capacity under early stopping.
+
+\paragraph{Description length ranks representations.} Within each training regime, the Laplace code length per compound was lowest for CheMeleon on all three tasks, the featurization with the best test metric (\cref{tab:tdc}). It also ordered ECFP4 and APDP correctly on AMES and Lipophilicity but not on AqSolDB, where APDP's collisions inflate its code length but its test error is lower.
+
+\subsection{Summary}
+Across three ADMET tasks, capacity located (i) compounds whose labels contradict their nearest neighbors and well-established structural alerts, including likely errors (AMES); (ii) a physical mechanism, ionization, that the representations do not encode (Lipophilicity); (iii) gross label errors and chemical classes outside the representations' scope (AqSolDB); and (iv) collisions where a representation maps compounds with very different labels to the same vector. It ranked compounds by how strongly networks memorize them, as measured by 864 retrainings, from a single posterior per network, and it showed that networks trained past early stopping memorize far more than a calibrated posterior needs without generalizing better.
+
 \section{Discussion and limitations}
 \paragraph{A taxonomy.} The capacity--fidelity plane separates (i) \emph{typical} examples (low capacity, high fidelity, held-out $\approx$ fidelity), (ii) \emph{memorized} examples (high capacity, high fidelity, low held-out fidelity), (iii) \emph{ignored} examples (modest capacity, low fidelity), and (iv) \emph{atypical but correct} examples (elevated capacity, high fidelity), the long tail that memorization may legitimately serve \citep{feldman2020}. The prior precision moves examples between (iii) and (ii), and the evidence offers a principled stopping point.
 
@@ -273,13 +417,15 @@ For 40 MLP examples ($\alpha=0.2$; the 20 highest-capacity and 20 random) and 28
 \item \emph{Locality.} The Laplace posterior describes one basin and ignores the implicit regularization of stochastic training; capacities are defined relative to a prior, as any MDL code requires a precision.
 \item \emph{One-step unlearning.} Held-out predictions for heavily memorized examples are miscalibrated (up to several-fold); treat capacity as a ranking and held-out fidelity as qualitative in that regime. Joint KL for large sets inherits this problem.
 \item \emph{Over-dispersion.} Posterior-averaged likelihoods are pessimistic for confident networks at weak priors; this does not affect $\Vol$, $\Inf$, or $\dof$.
-\item \emph{Scale and scope.} Exact GGN limits us to $P\lesssim10^4$; results use single seeds, small models, and priors chosen by hand (\cref{app:details}). Kronecker-factored curvature has made influence functions tractable for language models with tens of billions of parameters \citep{grosse2023}, but whether capacity estimates remain reliable at that scale is untested.
+\item \emph{Choosing the prior.} Capacities are relative to $\alpha$ (and $\sigma$). The case study selects them from data, but the Gaussian-process marginal likelihood of a trained network's tangent kernel is optimistic, since the kernel was fit to the same labels; we therefore used held-out data for $\sigma$ (\cref{sec:tdc-setup}). Rankings were stable under a tenfold weaker prior but less so under a tenfold stronger one.
+\item \emph{Refitting changes what is measured.} For networks away from a stationary point, the refit posterior describes the linearized network's own MAP rather than $\theta^*$; its totals are calibrated but much smaller than the memorization the networks actually exhibit, and the two agree only in ranking.
+\item \emph{Scale and scope.} The output-space computation costs $O((NC)^3)$, so it covers wide networks with up to a few thousand training examples regardless of $P$; the parameter-space route is limited to $P\lesssim10^4$. Neither reaches large training sets with many outputs. Kronecker-factored curvature has made influence functions tractable for language models with tens of billions of parameters \citep{grosse2023}, but whether capacity estimates remain reliable at that scale is untested.
 \end{itemize}
 
 \paragraph{Unique versus shared information.} Leave-one-out quantities measure only \emph{unique} information; \cref{prop:submod} shows they undercount the total, by about half to two-thirds here. A Shapley-style average over removal orders would distribute $\Vol_{\mathrm{tot}}$ exactly and is a natural extension. Tracing each example's marginal volume across nested subsets of increasing size would give an information-theoretic counterpart of individualized data scaling laws \citep{covert2024}. It would also test a hypothesis our class-level results suggest but do not establish: that examples in redundant groups (high $\rho$) are those whose value decays fastest with dataset size, while flipped and atypical examples retain unique information as the dataset grows.
 
 \section{Conclusion}
-Defining per-example capacity by Laplace unlearning yields three interpretable quantities (degrees of freedom, volume, and information) that are exact in linear-Gaussian models, cheap to compute for every example, tied to the generalization gap and to the MDL code length, and empirically predictive of which examples a network has memorized. Plotted against fidelity, they give a direct, per-example view of where a model spends its capacity.
+Defining per-example capacity by Laplace unlearning yields three interpretable quantities (degrees of freedom, volume, and information) that are exact in linear-Gaussian models, cheap to compute for every example, tied to the generalization gap and to the MDL code length, and empirically predictive of which examples a network has memorized. Plotted against fidelity, they give a direct, per-example view of where a model spends its capacity. Computed in output space, they apply to networks with millions of parameters, where, in the molecular property-prediction case study, they recovered contradictory labels, a missing physical mechanism, and representation collisions without being told what to look for.
 
 Capacity is the cost side of a per-example ledger. Value-of-information analyses in economics \citep{abadie2023} and data-valuation and scaling analyses in machine learning \citep{ghorbani2019,covert2024} measure the benefit side: the improvement in downstream decisions or held-out performance that an example buys. The two coincide under a logarithmic utility, where volume is the expected value of an example's label, but not in general. In our experiments, memorizing flipped labels consumed capacity and lengthened the total description of the data, a machine-learning analogue of evidence with negative net value. Measuring costs and benefits on a common scale in bits, and tracking how both scale with dataset size, is a natural next step.
 
@@ -287,13 +433,13 @@ Capacity is the cost side of a per-example ledger. Value-of-information analyses
 \ifanonymous
 The implementation, unit tests, and scripts that regenerate every figure and table are provided as anonymized supplementary material and will be released publicly upon publication.
 \else
-The method is implemented in \texttt{capfid}, an MIT-licensed PyTorch package available at \coderepo. The repository includes unit tests that check \cref{prop:reduction,prop:bayes,prop:submod} and \cref{cor:mi} against brute-force refits, and the script \texttt{examples/paper/reproduce\_paper.py}, which regenerates every figure and table in this paper.
+The method is implemented in \texttt{capfid}, an MIT-licensed PyTorch package available at \coderepo. The repository includes unit tests that check \cref{prop:reduction,prop:bayes,prop:submod} and \cref{cor:mi} against brute-force refits and the output-space computation against the parameter-space one, the script \texttt{examples/paper/reproduce\_paper.py}, which regenerates \cref{tab:exact,tab:moons,tab:sets} and \cref{fig:moons,fig:vit,fig:val}, and \texttt{examples/tdc\_casestudy/}, which regenerates the case study (\cref{tab:tdc,tab:collisions}, \cref{fig:tdc-val,fig:tdc-ames,fig:tdc-lipo,fig:tdc-aqsol,fig:tdc-gen}).
 \fi
 
 \begingroup
 \small
 \setlength{\bibsep}{2pt}
-\begin{thebibliography}{40}
+\begin{thebibliography}{60}
 
 \bibitem[Abadie et~al.(2023)]{abadie2023}
 A.~Abadie, A.~Agarwal, G.~Imbens, S.~Jia, J.~McQueen, S.~Stepaniants, and S.~Torres.
@@ -304,6 +450,11 @@ A.~Abadie, A.~Agarwal, G.~Imbens, S.~Jia, J.~McQueen, S.~Stepaniants, and S.~Tor
 A.~Achille, G.~Paolini, and S.~Soatto.
 \newblock Where is the information in a deep neural network?
 \newblock \emph{arXiv:1905.12213}, 2019.
+
+\bibitem[AstraZeneca(2016)]{astrazeneca2016}
+AstraZeneca.
+\newblock Experimental in vitro {DMPK} and physicochemical data on a set of publicly disclosed compounds.
+\newblock ChEMBL document CHEMBL3301361, 2016.
 
 \bibitem[Bae et~al.(2022)]{bae2022}
 J.~Bae, N.~Ng, A.~Lo, M.~Ghassemi, and R.~Grosse.
@@ -334,6 +485,16 @@ L.~Blier and Y.~Ollivier.
 Y.~Bu, S.~Zou, and V.~V. Veeravalli.
 \newblock Tightening mutual information-based bounds on generalization error.
 \newblock \emph{IEEE Journal on Selected Areas in Information Theory}, 1(1):121--130, 2020.
+
+\bibitem[Burns et~al.(2025)]{burns2025}
+J.~W. Burns, A.~S. Zalte, C.~R.~A. Abreu, J.~Sieg, C.~Feldmann, M.~Mathea, and W.~H. Green.
+\newblock Deep learning foundation models from classical molecular descriptors.
+\newblock \emph{arXiv:2506.15792}, 2025.
+
+\bibitem[Carhart et~al.(1985)Carhart, Smith, and Venkataraghavan]{carhart1985}
+R.~E. Carhart, D.~H. Smith, and R.~Venkataraghavan.
+\newblock Atom pairs as molecular features in structure--activity studies: definition and applications.
+\newblock \emph{J. Chem. Inf. Comput. Sci.}, 25(2):64--73, 1985.
 
 \bibitem[Cook(1977)]{cook1977}
 R.~D. Cook.
@@ -380,6 +541,11 @@ H.~Harutyunyan, A.~Achille, G.~Paolini, O.~Majumder, A.~Ravichandran, R.~Bhotika
 \newblock Estimating informativeness of samples with smooth unique information.
 \newblock In \emph{ICLR}, 2021.
 
+\bibitem[Heid et~al.(2024)]{heid2024}
+E.~Heid, K.~P. Greenman, Y.~Chung, S.-C. Li, D.~E. Graff, F.~H. Vermeire, H.~Wu, W.~H. Green, and C.~J. McGill.
+\newblock Chemprop: A machine learning package for chemical property prediction.
+\newblock \emph{J. Chem. Inf. Model.}, 64(1):9--17, 2024.
+
 \bibitem[Hinton and van Camp(1993)]{hinton1993}
 G.~E. Hinton and D.~van Camp.
 \newblock Keeping the neural networks simple by minimizing the description length of the weights.
@@ -395,10 +561,30 @@ R.~A. Howard.
 \newblock Information value theory.
 \newblock \emph{IEEE Transactions on Systems Science and Cybernetics}, 2(1):22--26, 1966.
 
+\bibitem[Huang et~al.(2021)]{huang2021}
+K.~Huang, T.~Fu, W.~Gao, Y.~Zhao, Y.~Roohani, J.~Leskovec, C.~W. Coley, C.~Xiao, J.~Sun, and M.~Zitnik.
+\newblock Therapeutics {D}ata {C}ommons: Machine learning datasets and tasks for drug discovery and development.
+\newblock In \emph{NeurIPS Datasets and Benchmarks}, 2021.
+
 \bibitem[Immer et~al.(2021)Immer, Korzepa, and Bauer]{immer2021}
 A.~Immer, M.~Korzepa, and M.~Bauer.
 \newblock Improving predictions of {B}ayesian neural nets via local linearization.
 \newblock In \emph{AISTATS}, 2021.
+
+\bibitem[Jacot et~al.(2018)Jacot, Gabriel, and Hongler]{jacot2018}
+A.~Jacot, F.~Gabriel, and C.~Hongler.
+\newblock Neural tangent kernel: Convergence and generalization in neural networks.
+\newblock In \emph{NeurIPS}, 2018.
+
+\bibitem[Kearsley et~al.(1996)]{kearsley1996}
+S.~K. Kearsley, S.~Sallamack, E.~M. Fluder, J.~D. Andose, R.~T. Mosley, and R.~P. Sheridan.
+\newblock Chemical similarity using physiochemical property descriptors.
+\newblock \emph{J. Chem. Inf. Comput. Sci.}, 36(1):118--127, 1996.
+
+\bibitem[Khan et~al.(2019)]{khan2019}
+M.~E. Khan, A.~Immer, E.~Abedi, and M.~Korzepa.
+\newblock Approximate inference turns deep networks into {G}aussian processes.
+\newblock In \emph{NeurIPS}, 2019.
 
 \bibitem[Koh and Liang(2017)]{koh2017}
 P.~W. Koh and P.~Liang.
@@ -425,6 +611,16 @@ J.~Martens and R.~Grosse.
 \newblock Optimizing neural networks with {K}ronecker-factored approximate curvature.
 \newblock In \emph{ICML}, 2015.
 
+\bibitem[McInnes et~al.(2018)McInnes, Healy, and Melville]{mcinnes2018}
+L.~McInnes, J.~Healy, and J.~Melville.
+\newblock {UMAP}: Uniform manifold approximation and projection for dimension reduction.
+\newblock \emph{arXiv:1802.03426}, 2018.
+
+\bibitem[Moriwaki et~al.(2018)]{moriwaki2018}
+H.~Moriwaki, Y.-S. Tian, N.~Kawashita, and T.~Takagi.
+\newblock Mordred: a molecular descriptor calculator.
+\newblock \emph{J. Cheminform.}, 10:4, 2018.
+
 \bibitem[Pedregosa et~al.(2011)]{pedregosa2011}
 F.~Pedregosa et~al.
 \newblock Scikit-learn: Machine learning in {P}ython.
@@ -440,6 +636,11 @@ H.~Raiffa and R.~Schlaifer.
 \newblock \emph{Applied Statistical Decision Theory}.
 \newblock Division of Research, Harvard Business School, 1961.
 
+\bibitem[Rasmussen and Williams(2006)]{rasmussen2006}
+C.~E. Rasmussen and C.~K.~I. Williams.
+\newblock \emph{Gaussian Processes for Machine Learning}.
+\newblock MIT Press, 2006.
+
 \bibitem[Rissanen(1978)]{rissanen1978}
 J.~Rissanen.
 \newblock Modeling by shortest data description.
@@ -450,10 +651,40 @@ H.~Ritter, A.~Botev, and D.~Barber.
 \newblock A scalable {L}aplace approximation for neural networks.
 \newblock In \emph{ICLR}, 2018.
 
+\bibitem[Rogers and Hahn(2010)]{rogers2010}
+D.~Rogers and M.~Hahn.
+\newblock Extended-connectivity fingerprints.
+\newblock \emph{J. Chem. Inf. Model.}, 50(5):742--754, 2010.
+
+\bibitem[Sheridan(2019)]{sheridan2019}
+R.~P. Sheridan.
+\newblock Interpretation of {QSAR} models by coloring atoms according to changes in predicted activity: How robust is it?
+\newblock \emph{J. Chem. Inf. Model.}, 59(4):1324--1337, 2019.
+
+\bibitem[Sorkun et~al.(2019)Sorkun, Khetan, and Er]{sorkun2019}
+M.~C. Sorkun, A.~Khetan, and S.~Er.
+\newblock {AqSolDB}, a curated reference set of aqueous solubility and {2D} descriptors for a diverse set of compounds.
+\newblock \emph{Sci. Data}, 6:143, 2019.
+
+\bibitem[Srivastava et~al.(2014)]{srivastava2014}
+N.~Srivastava, G.~Hinton, A.~Krizhevsky, I.~Sutskever, and R.~Salakhutdinov.
+\newblock Dropout: A simple way to prevent neural networks from overfitting.
+\newblock \emph{JMLR}, 15:1929--1958, 2014.
+
 \bibitem[Tishby et~al.(2000)Tishby, Pereira, and Bialek]{tishby2000}
 N.~Tishby, F.~C. Pereira, and W.~Bialek.
 \newblock The information bottleneck method.
 \newblock \emph{arXiv:physics/0004057}, 2000.
+
+\bibitem[Wu et~al.(2018)]{wu2018}
+Z.~Wu, B.~Ramsundar, E.~N. Feinberg, J.~Gomes, C.~Geniesse, A.~S. Pappu, K.~Leswing, and V.~Pande.
+\newblock {MoleculeNet}: a benchmark for molecular machine learning.
+\newblock \emph{Chem. Sci.}, 9(2):513--530, 2018.
+
+\bibitem[Xu et~al.(2012)]{xu2012}
+C.~Xu, F.~Cheng, L.~Chen, Z.~Du, W.~Li, G.~Liu, P.~W. Lee, and Y.~Tang.
+\newblock In silico prediction of chemical {A}mes mutagenicity.
+\newblock \emph{J. Chem. Inf. Model.}, 52(11):2840--2847, 2012.
 
 \bibitem[Xu and Raginsky(2017)]{xu2017}
 A.~Xu and M.~Raginsky.
@@ -490,5 +721,17 @@ C.~Zhang, S.~Bengio, M.~Hardt, B.~Recht, and O.~Vinyals.
 \paragraph{Retraining.} Warm-started from $\theta^*$, L-BFGS for up to 300 iterations on \cref{eq:objective} without the example. Warm starting isolates the local effect that the Laplace approximation targets; retraining from scratch would add basin-to-basin variation.
 
 \paragraph{Hardware and reproduction.} One CPU core, 3\,GB RAM. The full pipeline including validation (\texttt{examples/paper/reproduce\_paper.py} in the \texttt{capfid} repository) ran in about 12 minutes.
+
+
+\section{Case-study details}\label{app:tdc}
+\paragraph{Data and features.} Tasks were loaded with PyTDC~0.4.1 (\texttt{admet\_group}, \texttt{get\_train\_valid\_split(seed=1, split\_type="default")}). ECFP4 used RDKit's Morgan generator (radius 2, 2{,}048 bits). APDP followed the implementation in \texttt{maomlab/MPLearn}: the nonzero keys of RDKit's atom-pair fingerprint and of Sheridan's binding-property-pair fingerprint (the latter offset by $2^{23}$) were folded modulo 2{,}048 into one binary vector. Because $2^{23}$ is a multiple of 2{,}048, both families share the same bits. Atom pairs and binding-property pairs are defined only within a connected fragment, so 149 AqSolDB compounds consisting only of monatomic ions or single atoms have an all-zero APDP vector. CheMeleon embeddings were computed with the published message-passing weights (Zenodo record 15460715) and mean aggregation, as in \texttt{chemeleon\_fingerprint.py}.
+
+\paragraph{Training.} Minibatches of 128, Adam with coupled weight decay, binary cross-entropy or $\tfrac12$MSE on standardized targets. The 24 configurations were drawn without replacement from width $\in\{256,512,1024\}$, depth $\in\{1,2,3\}$ hidden layers, dropout $\in\{0.1,0.2,0.3,0.5\}$, weight decay $\in\{10^{-6},10^{-5},10^{-4},10^{-3}\}$ and learning rate $\in\{10^{-4},3\times10^{-4},10^{-3}\}$, each trained for up to 200 epochs with patience 25 on the validation metric. Final models were retrained with the selected configuration for the selected number of epochs (early) or 100 epochs (long), with seeds 0, 1 and 2; test metrics are means over seeds and capacity analyses use seed 0.
+
+\paragraph{Posterior.} The NTK Gram matrices over the training set and between held-out and training compounds were assembled from layer factors (\cref{sec:kernel}) in float64. The prior precision maximized the training-set marginal likelihood of the Gaussian process with kernel $G/\alpha$ and mean $m$: in closed form from one eigendecomposition of $G$ for Gaussian likelihoods \citep[eq.~2.30]{rasmussen2006}, and by the Laplace approximation for AMES \citep[eq.~3.32]{rasmussen2006}, with Newton mode-finding at each candidate; both by bounded scalar search over $\log\alpha$. For regression, $\sigma$ maximized the closed-form predictive log-likelihood of the validation compounds \citep[eqs.~2.25--2.26]{rasmussen2006}, with $\alpha$ re-optimized at each candidate $\sigma$. For comparison we also maximized the training marginal likelihood jointly over $(\alpha,\sigma)$ (Nelder--Mead from four starting points). The prior mean $m$ was 0 for standardized targets and the log-odds of the training positive rate for AMES. Posterior expectations used 1{,}000 Monte Carlo samples for AMES (closed form for Gaussian likelihoods).
+
+\paragraph{Retraining.} For model $k=1,\dots,48$, each training compound was kept independently with probability 0.7 and the network was trained from a new initialization (seed $1000+k$) with the same configuration and number of epochs. Each compound was held out of about 14 networks.
+
+\paragraph{Compute.} All case-study stages ran on a 12-core Apple M2 Max CPU: hyperparameter search (216 runs) about 15 minutes on 10 processes; capacity analysis of 45 networks 143 minutes of CPU time in total (35\,s to 7\,min per network), run as 4 concurrent processes of 3 threads each; 864 retraining runs about 100 minutes on 8 processes. The script \texttt{examples/tdc\_casestudy/run\_casestudy.py} reproduces every number.
 
 \end{document}
