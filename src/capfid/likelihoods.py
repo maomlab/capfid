@@ -4,6 +4,7 @@ Each likelihood supplies, at the network outputs f (logits or means):
 
 * ``log_lik(f, y)``       log p(y | f), broadcasting over leading sample dims
 * ``grad_hess(f, y)``     residual r = ∂ℓ/∂f and curvature Λ = ∂²ℓ/∂f², ℓ = −log p
+* ``hess(f)``             Λ alone; it does not depend on y for the likelihoods here
 * ``gauss_expect``        E_{f~N(m,S)} log p(y|f)  and  log E_{f~N(m,S)} p(y|f), per example
 * ``joint_expect``        the same two quantities for a set whose outputs are jointly Gaussian
 """
@@ -13,7 +14,7 @@ import math
 
 import torch
 
-__all__ = ["Likelihood", "Categorical", "Gaussian", "psd_sqrt"]
+__all__ = ["Likelihood", "Categorical", "Bernoulli", "Gaussian", "psd_sqrt"]
 
 
 def psd_sqrt(M: torch.Tensor) -> torch.Tensor:
@@ -32,6 +33,10 @@ class Likelihood:
         return -self.log_lik(f, y)
 
     def grad_hess(self, f: torch.Tensor, y: torch.Tensor):
+        raise NotImplementedError
+
+    def hess(self, f: torch.Tensor) -> torch.Tensor:
+        """Curvature Λ at outputs f (needed for unlabeled inputs, e.g. ``predict``)."""
         raise NotImplementedError
 
     def gauss_expect(self, mean, cov, y, eps):
@@ -59,8 +64,26 @@ class Categorical(Likelihood):
         p = f.softmax(-1)
         r = p.clone()
         r[torch.arange(len(y)), y] -= 1.0
-        Lam = torch.diag_embed(p) - p.unsqueeze(-1) * p.unsqueeze(-2)
-        return r, Lam
+        return r, self.hess(f)
+
+    def hess(self, f):
+        p = f.softmax(-1)
+        return torch.diag_embed(p) - p.unsqueeze(-1) * p.unsqueeze(-2)
+
+
+class Bernoulli(Likelihood):
+    """Independent sigmoid outputs (binary cross-entropy). ``y`` holds 0/1 targets shaped like
+    the outputs, (N, D); D = 1 for a single binary task with one logit."""
+
+    def log_lik(self, f, y):
+        return (y * f - torch.nn.functional.softplus(f)).sum(-1)
+
+    def grad_hess(self, f, y):
+        return f.sigmoid() - y, self.hess(f)
+
+    def hess(self, f):
+        p = f.sigmoid()
+        return torch.diag_embed(p * (1 - p))
 
 
 class Gaussian(Likelihood):
@@ -77,10 +100,11 @@ class Gaussian(Likelihood):
         return -0.5 * ((f - y) ** 2).sum(-1) / self.s2 - 0.5 * D * math.log(2 * math.pi * self.s2)
 
     def grad_hess(self, f, y):
+        return (f - y) / self.s2, self.hess(f)
+
+    def hess(self, f):
         D = f.shape[-1]
-        r = (f - y) / self.s2
-        Lam = torch.eye(D, dtype=f.dtype, device=f.device).expand(f.shape[0], D, D) / self.s2
-        return r, Lam.clone()
+        return (torch.eye(D, dtype=f.dtype, device=f.device).expand(f.shape[0], D, D) / self.s2).clone()
 
     def _gauss_logpdf(self, d, cov):
         D = d.shape[-1]

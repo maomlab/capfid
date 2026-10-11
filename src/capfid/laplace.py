@@ -29,19 +29,29 @@ Fidelity
 
 Under exact Bayesian updating, information = E_{q_D} log p(y) − log E_{q_{D\S}} p(y)
 (the generalization gap); this is exact for linear-Gaussian models.
+
+Two ways to compute the same posterior
+--------------------------------------
+``LinearizedLaplace`` factorizes the P × P matrix A (cost O(P³)). ``KernelLaplace`` works in
+the N·C-dimensional output space with the empirical NTK G = J Jᵀ and the Woodbury identity,
+
+    J Σ Jᵀ = α⁻¹ [G − G Λ^{½} M⁻¹ Λ^{½} G],    M = αI + Λ^{½} G Λ^{½},
+    log det(I + GGN/α) = log det(M/α),
+
+(cost O((NC)³)), which is the cheaper route for wide networks with P ≫ N·C.
 """
 from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
 
-import numpy as np
 import torch
 
 from .jacobians import ParamFilter, flat_params, jacobians
 from .likelihoods import Likelihood, psd_sqrt
+from .ntk import ntk_gram
 
-__all__ = ["LinearizedLaplace", "Totals"]
+__all__ = ["LinearizedLaplace", "KernelLaplace", "Totals"]
 
 LN2 = math.log(2.0)
 DT = torch.float64
@@ -82,79 +92,47 @@ def _removal_terms(S, Lh, r):
     return trK, logdet_IK, S_loo, quad
 
 
-class LinearizedLaplace:
-    """Linearized Laplace posterior around a trained model, with capacity/fidelity scores.
+class _Laplace:
+    """Per-example, per-set and whole-model algebra shared by both posterior computations.
 
-    Parameters
-    ----------
-    model : torch.nn.Module
-        Trained network mapping a batch of inputs (B, ...) to outputs (B, C). It is put in
-        eval mode; it must not mix examples within a batch.
-    X, y : torch.Tensor
-        Training inputs and targets (the data the model was trained on).
-    likelihood : capfid.Likelihood
-        e.g. ``Categorical()`` or ``Gaussian(sigma)``.
-    prior_precision : float
-        α, the L2 coefficient of the *summed* training objective (see
-        ``prior_precision_from_weight_decay`` for mean-loss training).
-    param_filter : callable(name) -> bool, optional
-        Restrict the posterior to these parameters (e.g. ``lambda n: n.startswith("head")``
-        for a last-layer posterior); other parameters are held fixed.
-    batch_size : int
-        Batch size for forward passes and Jacobians.
-    max_params : int
-        Safety limit; the exact posterior needs O(P²) memory and O(P³) time.
+    Subclasses set ``self.S`` (N, C, C) = J_i Σ J_iᵀ and implement ``_set_cov(idx)`` (J_S Σ J_Sᵀ),
+    ``_logdet_ratio()`` (log det(I + GGN/α)) and ``_new_moments(X)`` (posterior mean outputs
+    and J(X) Σ J(X)ᵀ blocks at new inputs).
     """
 
-    def __init__(self, model, X, y, likelihood: Likelihood, prior_precision: float, *,
-                 param_filter: ParamFilter = None, batch_size: int = 128, max_params: int = 20_000):
+    def _setup(self, model, X, y, likelihood, prior_precision, param_filter, batch_size):
         if prior_precision <= 0:
             raise ValueError("prior_precision must be > 0")
-        P = flat_params(model, param_filter).numel()
-        if P > max_params:
-            raise ValueError(
-                f"{P} parameters selected; the exact posterior needs ~{8 * P * P / 1e9:.1f} GB. "
-                "Use param_filter (e.g. last layer only) or raise max_params.")
         self.model, self.likelihood, self.alpha = model, likelihood, float(prior_precision)
+        self.param_filter, self.batch_size = param_filter, batch_size
         model.eval()
-        with torch.no_grad():
-            f = torch.cat([model(X[i:i + batch_size]) for i in range(0, len(X), batch_size)])
-        self.f = f.detach().cpu().to(DT)
+        self.f = self._forward(X)
         y = y.detach().cpu()
         self.y = y.to(DT) if y.is_floating_point() else y
         self.r, self.Lam = likelihood.grad_hess(self.f, self.y)
         self._Lh = psd_sqrt(self.Lam)
-
-        self.J = jacobians(model, X, param_filter, batch_size)          # (N, C, P), CPU
         self.theta = flat_params(model, param_filter).detach().cpu().to(DT)
-        N, C, P = self.J.shape
-        self.n, self.n_outputs, self.n_params = N, C, P
+        self.n, self.n_outputs = self.f.shape
+        self.n_params = self.theta.numel()
 
-        A = self.alpha * torch.eye(P, dtype=DT)
-        for i in range(0, N, batch_size):
-            Jb = self.J[i:i + batch_size].to(DT)
-            A += Jb.reshape(-1, P).T @ (self.Lam[i:i + batch_size] @ Jb).reshape(-1, P)
-        self.L = torch.linalg.cholesky(A)
-        self.logdet_A = 2.0 * self.L.diagonal().log().sum().item()
-        del A
-
-        S = torch.empty(N, C, C, dtype=DT)
-        for i in range(0, N, batch_size):
-            V = self._half_solve(self.J[i:i + batch_size].to(DT).reshape(-1, P).T).reshape(P, -1, C)
-            S[i:i + batch_size] = torch.einsum("pbc,pbd->bcd", V, V)
-        self.S = S                                                        # J_i Σ J_iᵀ
+    def _forward(self, X):
+        with torch.no_grad():
+            f = torch.cat([self.model(X[i:i + self.batch_size])
+                           for i in range(0, len(X), self.batch_size)])
+        return f.detach().cpu().to(DT)
 
     def __repr__(self):
-        return (f"LinearizedLaplace(n={self.n}, outputs={self.n_outputs}, params={self.n_params}, "
-                f"prior_precision={self.alpha:g})")
-
-    def _half_solve(self, B):
-        return torch.linalg.solve_triangular(self.L, B, upper=False)
+        return (f"{type(self).__name__}(n={self.n}, outputs={self.n_outputs}, "
+                f"params={self.n_params}, prior_precision={self.alpha:g})")
 
     @property
     def posterior_output_cov(self) -> torch.Tensor:
         """Epistemic covariance of the outputs at each training input, J_i Σ J_iᵀ, (N, C, C)."""
         return self.S
+
+    def _prior_sq(self):
+        """‖θ − θ₀‖² at the posterior mean (θ₀ = 0 unless the mean is refit)."""
+        return float(self.theta @ self.theta)
 
     # ------------------------------------------------------------------ single examples
     def pointwise(self, n_samples: int = 1000, seed: int = 0, chunk_size: int = 512,
@@ -221,9 +199,8 @@ class LinearizedLaplace:
         sets; the volume depends only on curvature.
         """
         idx = torch.unique(torch.as_tensor(idx, dtype=torch.long).reshape(-1))
-        m, C, P, lik = len(idx), self.n_outputs, self.n_params, self.likelihood
-        V = self._half_solve(self.J[idx].to(DT).reshape(-1, P).T)
-        S = V.T @ V
+        m, C, lik = len(idx), self.n_outputs, self.likelihood
+        S = self._set_cov(idx)
         Lh = torch.block_diag(*self._Lh[idx])
         r = self.r[idx].reshape(-1)
         trK, logdet_IK, S_loo, quad = (t[0] for t in _removal_terms(S[None], Lh[None], r[None]))
@@ -261,10 +238,256 @@ class LinearizedLaplace:
         trK, logdet_IK, _, _ = _removal_terms(self.S, self._Lh, self.r)
         gamma = trK.sum().item()
         P, a = self.n_params, self.alpha
-        logdet_ratio = self.logdet_A - P * math.log(a)                  # log det(I + GGN/α)
-        vol_tot = 0.5 * logdet_ratio
-        model = 0.5 * a * float(self.theta @ self.theta) + vol_tot
+        vol_tot = 0.5 * self._logdet_ratio()                             # ½ log det(I + GGN/α)
+        model = 0.5 * a * self._prior_sq() + vol_tot
         data = -float(self.likelihood.log_lik(self.f, self.y).sum())
         unique = float((-0.5 * logdet_IK).sum()) / vol_tot
         return Totals(P, gamma, vol_tot / LN2, model / LN2, data / LN2,
                       (model - 0.5 * gamma) / LN2, -(model + data), unique)
+
+    # ------------------------------------------------------------------ new inputs
+    def predict(self, X_new, y_new=None, n_samples: int = 1000, seed: int = 0) -> dict:
+        """Linearized posterior predictions at new inputs (e.g. a test set).
+
+        Returns a dict of numpy arrays:
+
+        ========================== ==========================================================
+        outputs                    f(x; θ*), (N', C)
+        output_cov                 J(x) Σ J(x)ᵀ, (N', C, C)
+        volume_bits                h(q_D) − h(q_{D∪{x}}) = ½ log2 det(I + Λ^{½} J Σ Jᵀ Λ^{½}):
+                                   the volume x would occupy if added to the training data
+                                   with any label (Λ at f(x; θ*)); for a Gaussian likelihood,
+                                   the mutual information between its label and the weights
+        fidelity_bits              log2 p(y | x, θ*)            (only with ``y_new``)
+        predictive_fidelity_bits   log2 E_{q_D} p(y | x, θ)     (only with ``y_new``)
+        ========================== ==========================================================
+        """
+        lik = self.likelihood
+        f, S = self._new_moments(X_new)
+        Lh = psd_sqrt(lik.hess(f))
+        I = torch.eye(f.shape[1], dtype=DT)
+        vol = 0.5 * torch.linalg.slogdet(I + Lh @ S @ Lh)[1]
+        out = dict(outputs=f.numpy(), output_cov=S.numpy(), volume_bits=(vol / LN2).numpy())
+        if y_new is not None:
+            y = y_new.detach().cpu()
+            y = y.to(DT) if y.is_floating_point() else y
+            g = torch.Generator().manual_seed(seed)
+            eps = torch.randn(n_samples, *f.shape, generator=g, dtype=DT)
+            _, pred = lik.gauss_expect(f, S, y, eps)
+            out["fidelity_bits"] = (lik.log_lik(f, y) / LN2).numpy()
+            out["predictive_fidelity_bits"] = (pred / LN2).numpy()
+        return out
+
+
+class LinearizedLaplace(_Laplace):
+    """Linearized Laplace posterior around a trained model, with capacity/fidelity scores.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        Trained network mapping a batch of inputs (B, ...) to outputs (B, C). It is put in
+        eval mode; it must not mix examples within a batch.
+    X, y : torch.Tensor
+        Training inputs and targets (the data the model was trained on).
+    likelihood : capfid.Likelihood
+        e.g. ``Categorical()``, ``Bernoulli()`` or ``Gaussian(sigma)``.
+    prior_precision : float
+        α, the L2 coefficient of the *summed* training objective (see
+        ``prior_precision_from_weight_decay`` for mean-loss training).
+    param_filter : callable(name) -> bool, optional
+        Restrict the posterior to these parameters (e.g. ``lambda n: n.startswith("head")``
+        for a last-layer posterior); other parameters are held fixed.
+    batch_size : int
+        Batch size for forward passes and Jacobians.
+    max_params : int
+        Safety limit; the exact posterior needs O(P²) memory and O(P³) time. For wide
+        networks with many more parameters than N·C, use ``KernelLaplace``.
+    """
+
+    def __init__(self, model, X, y, likelihood: Likelihood, prior_precision: float, *,
+                 param_filter: ParamFilter = None, batch_size: int = 128, max_params: int = 20_000):
+        P = flat_params(model, param_filter).numel()
+        if P > max_params:
+            raise ValueError(
+                f"{P} parameters selected; the exact posterior needs ~{8 * P * P / 1e9:.1f} GB. "
+                "Use KernelLaplace (cost set by N·C instead of P), param_filter (e.g. last "
+                "layer only), or raise max_params.")
+        self._setup(model, X, y, likelihood, prior_precision, param_filter, batch_size)
+        self.J = jacobians(model, X, param_filter, batch_size)          # (N, C, P), CPU
+        N, C, P = self.J.shape
+
+        A = self.alpha * torch.eye(P, dtype=DT)
+        for i in range(0, N, batch_size):
+            Jb = self.J[i:i + batch_size].to(DT)
+            A += Jb.reshape(-1, P).T @ (self.Lam[i:i + batch_size] @ Jb).reshape(-1, P)
+        self.L = torch.linalg.cholesky(A)
+        self.logdet_A = 2.0 * self.L.diagonal().log().sum().item()
+        del A
+        self.S = self._blocks(self.J)                                     # J_i Σ J_iᵀ
+
+    def _half_solve(self, B):
+        return torch.linalg.solve_triangular(self.L, B, upper=False)
+
+    def _blocks(self, J):
+        P, C, bs = self.n_params, J.shape[1], self.batch_size
+        S = torch.empty(len(J), C, C, dtype=DT)
+        for i in range(0, len(J), bs):
+            V = self._half_solve(J[i:i + bs].to(DT).reshape(-1, P).T).reshape(P, -1, C)
+            S[i:i + bs] = torch.einsum("pbc,pbd->bcd", V, V)
+        return S
+
+    def _set_cov(self, idx):
+        V = self._half_solve(self.J[idx].to(DT).reshape(-1, self.n_params).T)
+        return V.T @ V
+
+    def _logdet_ratio(self):
+        return self.logdet_A - self.n_params * math.log(self.alpha)
+
+    def _new_moments(self, X):
+        S = self._blocks(jacobians(self.model, X, self.param_filter, self.batch_size))
+        return self._forward(X), S
+
+
+class KernelLaplace(_Laplace):
+    """The same posterior as ``LinearizedLaplace``, computed in output space via the empirical NTK.
+
+    With G = J Jᵀ (N·C × N·C), Λ = blkdiag(Λ_i) and M = αI + Λ^{½} G Λ^{½} (Woodbury),
+
+        J Σ Jᵀ = α⁻¹ [G − G Λ^{½} M⁻¹ Λ^{½} G],     log det(I + GGN/α) = log det(M/α).
+
+    Every per-example, per-set and whole-model quantity is identical to ``LinearizedLaplace``;
+    the cost is O((NC)³) time and about 3 (NC)² floats of memory instead of O(P³) and P².
+    Use it for wide networks (P ≫ N·C), e.g. MLPs on molecular fingerprints. For networks
+    whose parameters are all in ``nn.Linear`` layers, G is assembled without Jacobians
+    (see ``capfid.ntk_gram``).
+
+    Parameters are as for ``LinearizedLaplace``, plus
+
+    gram : torch.Tensor, optional
+        Precomputed ``ntk_gram(model, X, param_filter=...)``, e.g. to reuse it across several
+        prior precisions.
+    prior_mean : float or torch.Tensor (C,), optional
+        If given, the posterior mean is *refit*: instead of the trained outputs f(x; θ*), it is
+        the MAP of the linearized network, i.e. of the Gaussian process with this prior mean
+        and kernel G/α (Newton's method; one step for a Gaussian likelihood). Use this when θ*
+        is not a stationary point of Σℓ + (α/2)‖θ‖², e.g. after training with dropout or early
+        stopping, or with α chosen after training. Unlearning is then exact for a Gaussian
+        likelihood (exact Gaussian-process leave-out) instead of relying on ∇L(θ*) = 0, and
+        ``totals().log_evidence_nats`` is the (Laplace) Gaussian-process marginal likelihood.
+        ``outputs`` and fidelities then refer to this refit mean, not to the network.
+    max_outputs : int
+        Safety limit on N·C.
+    """
+
+    def __init__(self, model, X, y, likelihood: Likelihood, prior_precision: float, *,
+                 param_filter: ParamFilter = None, batch_size: int = 512, gram=None,
+                 prior_mean=None, max_outputs: int = 20_000, newton_iters: int = 50,
+                 newton_tol: float = 1e-10):
+        self._setup(model, X, y, likelihood, prior_precision, param_filter, batch_size)
+        N, C = self.n, self.n_outputs
+        NC = N * C
+        if NC > max_outputs:
+            raise ValueError(f"N·C = {NC}; the output-space posterior needs ~{24 * NC * NC / 1e9:.1f}"
+                             " GB. Raise max_outputs, or use LinearizedLaplace if P is small.")
+        G = ntk_gram(model, X, param_filter=param_filter, batch_size=batch_size) if gram is None \
+            else gram.detach().cpu().to(DT)
+        if G.shape != (NC, NC):
+            raise ValueError(f"gram has shape {tuple(G.shape)}, expected ({NC}, {NC})")
+        self.X, self.G = X, G
+        self.prior_mean = None
+        if prior_mean is not None:
+            self._refit(prior_mean, newton_iters, newton_tol)
+        LhG = torch.einsum("icd,idx->icx", self._Lh, G.reshape(N, C, NC)).reshape(NC, NC)
+        M = torch.einsum("xjd,jde->xje", LhG.reshape(NC, N, C), self._Lh).reshape(NC, NC)
+        M.diagonal().add_(self.alpha)
+        self.L = torch.linalg.cholesky(M)
+        del M
+        self.logdet_M = 2.0 * self.L.diagonal().log().sum().item()
+        self.W = torch.linalg.solve_triangular(self.L, LhG, upper=False)   # L⁻¹ Λ^{½} G
+        del LhG
+        Gd = torch.diagonal(G.reshape(N, C, N, C), dim1=0, dim2=2).permute(2, 0, 1)
+        W3 = self.W.reshape(NC, N, C)
+        S = (Gd - torch.einsum("xic,xid->icd", W3, W3)) / self.alpha
+        self.S = 0.5 * (S + S.transpose(-1, -2))                           # J_i Σ J_iᵀ
+
+    def _refit(self, prior_mean, iters, tol):
+        """Newton's method for the MAP of the Gaussian process (mean m, kernel G/α) in output
+        space (Rasmussen & Williams 2006, Alg. 3.1, with block curvature), parametrized as
+        f = m + K a and globalized by backtracking on Ψ(a) = log p(y | f) − ½ aᵀ K a: an
+        undamped step can overshoot into the saturated region of a sigmoid or softmax when
+        K = G/α is large, from which Newton does not recover."""
+        N, C = self.n, self.n_outputs
+        m = torch.as_tensor(prior_mean, dtype=DT).expand(N, C).clone()
+        K = self.G / self.alpha
+
+        def psi(a):
+            Ka = K @ a
+            f = m + Ka.reshape(N, C)
+            return float(self.likelihood.log_lik(f, self.y).sum()) - 0.5 * float(a @ Ka), f
+
+        a = torch.zeros(N * C, dtype=DT)
+        obj, f = psi(a)
+        for it in range(iters):
+            r, Lam = self.likelihood.grad_hess(f, self.y)
+            Lh = psd_sqrt(Lam)
+            b = (Lam @ (f - m).unsqueeze(-1)).squeeze(-1) - r                        # (N, C)
+            Lhm = torch.block_diag(*Lh) if C > 1 else torch.diag(Lh.reshape(-1))
+            B = Lhm @ K @ Lhm
+            B.diagonal().add_(1.0)
+            Lb = torch.linalg.cholesky(B)
+            Kb = K @ b.reshape(-1)
+            d = b.reshape(-1) - Lhm @ torch.cholesky_solve((Lhm @ Kb).unsqueeze(-1), Lb).squeeze(-1) - a
+            t = 1.0
+            for _ in range(40):
+                obj_new, f_new = psi(a + t * d)
+                if obj_new >= obj - 1e-12 * abs(obj):
+                    break
+                t *= 0.5
+            a = a + t * d
+            step = float((f_new - f).abs().max())
+            f, obj = f_new, obj_new
+            if step < tol:
+                break
+        self.newton_iterations = it + 1
+        self.prior_mean = m
+        self._a = a                                                     # K⁻¹ (f − m) = −r at the MAP
+        self.f = f
+        self.r, self.Lam = self.likelihood.grad_hess(f, self.y)
+        self._Lh = psd_sqrt(self.Lam)
+
+    def _prior_sq(self):
+        if self.prior_mean is None:
+            return super()._prior_sq()
+        return float(self._a @ self.G @ self._a) / self.alpha ** 2
+
+    def _rows(self, idx):
+        C = self.n_outputs
+        return (idx.reshape(-1, 1) * C + torch.arange(C)).reshape(-1)
+
+    def _set_cov(self, idx):
+        rows = self._rows(idx)
+        Wr = self.W[:, rows]
+        S = (self.G[rows][:, rows] - Wr.T @ Wr) / self.alpha
+        return 0.5 * (S + S.T)
+
+    def _logdet_ratio(self):
+        return self.logdet_M - self.n * self.n_outputs * math.log(self.alpha)
+
+    def _new_moments(self, X, chunk_size: int = 1024):
+        N, C, NC = self.n, self.n_outputs, self.n * self.n_outputs
+        kw = dict(param_filter=self.param_filter, batch_size=self.batch_size)
+        out, means = [], []
+        for i in range(0, len(X), chunk_size):
+            Xb = X[i:i + chunk_size]
+            m = len(Xb)
+            Gx = ntk_gram(self.model, self.X, Xb, **kw)                     # (NC, mC)
+            LhGx = torch.einsum("icd,idx->icx", self._Lh, Gx.reshape(N, C, m * C)).reshape(NC, m * C)
+            V = torch.linalg.solve_triangular(self.L, LhGx, upper=False).reshape(NC, m, C)
+            Gb = ntk_gram(self.model, Xb, **kw).reshape(m, C, m, C)
+            Gd = torch.diagonal(Gb, dim1=0, dim2=2).permute(2, 0, 1)
+            S = (Gd - torch.einsum("xic,xid->icd", V, V)) / self.alpha
+            out.append(0.5 * (S + S.transpose(-1, -2)))
+            if self.prior_mean is not None:                   # GP mean: m + G(x, X) K⁻¹(f − m)/α
+                means.append(self.prior_mean[0] + (Gx.T @ self._a).reshape(m, C) / self.alpha)
+        f = torch.cat(means) if means else self._forward(X)
+        return f, torch.cat(out)

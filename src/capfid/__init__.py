@@ -8,17 +8,21 @@ an example's capacity is how much the weight posterior changes when it is unlear
     >>> res = la.pointwise()          # dict of per-example arrays
     >>> la.set_capacity(indices)      # joint capacity of a subset
     >>> la.totals()                   # effective params, model information, MDL code length
+
+For wide networks (parameters P much larger than N·C), ``capfid.KernelLaplace`` computes the
+same posterior in output space through the empirical neural tangent kernel.
 """
 from . import plotting
 from .jacobians import flat_params, jacobians
-from .laplace import LinearizedLaplace, Totals
-from .likelihoods import Categorical, Gaussian, Likelihood
+from .laplace import KernelLaplace, LinearizedLaplace, Totals
+from .likelihoods import Bernoulli, Categorical, Gaussian, Likelihood
+from .ntk import ntk_gram
 from .training import map_objective, prior_precision_from_weight_decay, retrain_without, train_map
 
 __version__ = "1.0.0"
 
 __all__ = [
-    "LinearizedLaplace", "Totals", "Likelihood", "Categorical", "Gaussian",
-    "jacobians", "flat_params", "map_objective", "train_map", "retrain_without",
-    "prior_precision_from_weight_decay", "__version__",
+    "LinearizedLaplace", "KernelLaplace", "Totals", "Likelihood", "Categorical", "Bernoulli",
+    "Gaussian", "jacobians", "flat_params", "ntk_gram", "map_objective", "train_map",
+    "retrain_without", "prior_precision_from_weight_decay", "__version__",
 ]
