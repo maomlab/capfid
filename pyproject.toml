@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "capfid"
-version = "1.0.0"
+version = "1.1.0"
 description = "Per-example model capacity versus fidelity for PyTorch models via linearized Laplace unlearning"
 readme = "README.md"
 license = {text = "MIT"}

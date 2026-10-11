@@ -19,7 +19,7 @@ from .likelihoods import Bernoulli, Categorical, Gaussian, Likelihood
 from .ntk import ntk_gram
 from .training import map_objective, prior_precision_from_weight_decay, retrain_without, train_map
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 __all__ = [
     "LinearizedLaplace", "KernelLaplace", "Totals", "Likelihood", "Categorical", "Bernoulli",
