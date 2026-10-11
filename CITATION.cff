@@ -17,7 +17,7 @@ preferred-citation:
   title: "How Many Bits Does a Training Example Cost? Per-Example Capacity versus Fidelity via Linearized Laplace Unlearning"
   authors:
     - family-names: "O'Meara"
-      given-names: "Matthew"
+      given-names: "Matthew J."
       email: "maom@umich.edu"
       affiliation: "Gilbert S. Omenn Department of Computational Medicine and Bioinformatics, University of Michigan, Ann Arbor, MI, USA; Department of Medicinal Chemistry, University of Michigan, Ann Arbor, MI, USA"
   year: 2026

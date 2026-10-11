@@ -139,7 +139,7 @@ If you use capfid, please cite the manuscript (see also [`CITATION.cff`](CITATIO
 @misc{capfid2026,
   title  = {How Many Bits Does a Training Example Cost? Per-Example Capacity versus
             Fidelity via Linearized Laplace Unlearning},
-  author = {O'Meara, Matthew},
+  author = {O'Meara, Matthew J.},
   year   = {2026},
   note   = {Preprint. Code: \url{https://github.com/maomlab/capfid}}
 }
