@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "capfid"
+version = "0.1.0"
+description = "Per-example model capacity versus fidelity for PyTorch models via linearized Laplace unlearning"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [{name = "maomlab"}]
+keywords = ["memorization", "laplace approximation", "minimum description length",
+            "influence functions", "label noise", "pytorch"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = ["torch>=2.0", "numpy>=1.22"]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.5"]
+examples = ["matplotlib>=3.5", "scikit-learn>=1.0"]
+dev = ["pytest>=7", "matplotlib>=3.5", "scikit-learn>=1.0"]
+
+[project.urls]
+Homepage = "https://github.com/maomlab/capfid"
+Issues = "https://github.com/maomlab/capfid/issues"
+Manuscript = "https://github.com/maomlab/capfid/blob/main/paper/capacity_fidelity.pdf"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

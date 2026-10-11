@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use capfid, please cite the accompanying manuscript."
+title: "capfid: per-example model capacity versus fidelity for PyTorch models"
+type: software
+authors:
+  - name: "maomlab"          # TODO: replace with individual authors (family-names / given-names)
+version: 0.1.0
+date-released: "2026-10-10"
+license: MIT
+repository-code: "https://github.com/maomlab/capfid"
+keywords: [memorization, laplace approximation, minimum description length, pytorch]
+preferred-citation:
+  type: article
+  title: "How Many Bits Does a Training Example Cost? Per-Example Capacity versus Fidelity via Linearized Laplace Unlearning"
+  authors:
+    - name: "maomlab"        # TODO: replace with manuscript authors
+  year: 2026
+  notes: "Preprint. PDF: https://github.com/maomlab/capfid/blob/main/paper/capacity_fidelity.pdf"
