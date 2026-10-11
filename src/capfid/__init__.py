@@ -15,7 +15,7 @@ from .laplace import LinearizedLaplace, Totals
 from .likelihoods import Categorical, Gaussian, Likelihood
 from .training import map_objective, prior_precision_from_weight_decay, retrain_without, train_map
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 
 __all__ = [
     "LinearizedLaplace", "Totals", "Likelihood", "Categorical", "Gaussian",

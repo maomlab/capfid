@@ -7,8 +7,8 @@ authors:
     given-names: "Matthew"
     email: "maom@umich.edu"
     affiliation: "Gilbert S. Omenn Department of Computational Medicine and Bioinformatics, University of Michigan, Ann Arbor, MI, USA; Department of Medicinal Chemistry, University of Michigan, Ann Arbor, MI, USA"
-version: 0.1.0
-date-released: "2026-10-10"
+version: 1.0.0
+date-released: "2026-10-11"
 license: MIT
 repository-code: "https://github.com/maomlab/capfid"
 keywords: [memorization, laplace approximation, minimum description length, pytorch]
