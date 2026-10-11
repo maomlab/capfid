@@ -3,7 +3,10 @@ message: "If you use capfid, please cite the accompanying manuscript."
 title: "capfid: per-example model capacity versus fidelity for PyTorch models"
 type: software
 authors:
-  - name: "maomlab"          # TODO: replace with individual authors (family-names / given-names)
+  - family-names: "O'Meara"
+    given-names: "Matthew"
+    email: "maom@umich.edu"
+    affiliation: "Gilbert S. Omenn Department of Computational Medicine and Bioinformatics, University of Michigan, Ann Arbor, MI, USA; Department of Medicinal Chemistry, University of Michigan, Ann Arbor, MI, USA"
 version: 0.1.0
 date-released: "2026-10-10"
 license: MIT
@@ -13,6 +16,9 @@ preferred-citation:
   type: article
   title: "How Many Bits Does a Training Example Cost? Per-Example Capacity versus Fidelity via Linearized Laplace Unlearning"
   authors:
-    - name: "maomlab"        # TODO: replace with manuscript authors
+    - family-names: "O'Meara"
+      given-names: "Matthew"
+      email: "maom@umich.edu"
+      affiliation: "Gilbert S. Omenn Department of Computational Medicine and Bioinformatics, University of Michigan, Ann Arbor, MI, USA; Department of Medicinal Chemistry, University of Michigan, Ann Arbor, MI, USA"
   year: 2026
   notes: "Preprint. PDF: https://github.com/maomlab/capfid/blob/main/paper/capacity_fidelity.pdf"
