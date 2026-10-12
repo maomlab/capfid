@@ -57,6 +57,7 @@ pip install --no-deps PyTDC==0.4.1
 
 python examples/tdc_casestudy/run_casestudy.py all --workers 10   # ~3 h on 10 CPU cores
 python examples/tdc_casestudy/figures.py --out paper/figures
+python examples/tdc_casestudy/dashboard.py                        # ~20 s
 ```
 
 Each stage caches its outputs under `cache/` (gitignored). `figures.py` writes the
@@ -71,6 +72,28 @@ manuscript figures and these tables to `results/`:
 | `key_compounds_<task>.csv` | the compounds highlighted in the figures, with nearest training neighbors |
 | `duplicate_groups.csv` | joint capacity (`set_capacity`) of every group of training compounds sharing a feature vector or a constitution |
 | `collisions.csv` | those groups summarized per task and featurization, split by whether their labels conflict |
+
+## Dashboard
+
+`dashboard.py` bakes those tables, the UMAP embeddings and the collision groups into
+[`dashboard.html`](dashboard.html), one static file (about 4 MB) that needs no server and no
+Python: download it and open it, or serve it from any static host. It has four views.
+
+| view | what you can do |
+|---|---|
+| **Map** | the three UMAPs side by side, coloured by any per-compound quantity (information, memorization, memorization by retraining, volume, effective parameters, data code length, error, held-out error, prediction, label) in either training regime, for the training or the test split. Zoom, pan, hover, and click a point to inspect it. Below them, the same compounds ranked, searchable, and filterable to those whose nearest neighbour carries a conflicting label. |
+| **Compare** | any two quantities against each other, each from any of the six models, with the Spearman correlation. Presets cover information versus retraining memorization, one featurization against another, early stopping against 100 epochs, memorization against held-out error, and prospective volume against test error. |
+| **Collisions** | every group of training compounds a featurization maps to the same vector (or that share a constitution), with its joint `set_capacity` score, the redundancy against scoring the members one at a time, and its share of the data code — and the members drawn. |
+| **Models** | the model and collision summary tables, sortable. |
+
+Selecting a compound anywhere fills a panel with its structure, label, split, every model's
+scores, the network's prediction next to the posterior refit *without* it, its three nearest
+training neighbours with their labels, and any collision group it belongs to.
+
+Structures are drawn in the browser by [RDKit.js](https://github.com/rdkit/rdkit-js), fetched
+from a CDN the first time the page is opened; offline it falls back to showing SMILES. Scores
+are rounded to three significant digits to keep the file small, so a rank correlation computed
+in the page can differ from the published one in its last digit.
 
 ## What capfid says about these models
 

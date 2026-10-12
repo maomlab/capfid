@@ -140,6 +140,13 @@ compounds each model spends its capacity on, depicts them, and places them in UM
 of each dataset. See its README for the findings and how to rerun it (about 3 hours on
 10 CPU cores).
 
+Its results are also browsable as a self-contained page,
+[`examples/tdc_casestudy/dashboard.html`](examples/tdc_casestudy/dashboard.html) (4 MB, no
+server needed — download it and open it): colour the UMAPs by any per-compound quantity, click
+a compound to see its structure, every model's scores and its nearest neighbours' labels, plot
+any two quantities against each other, and inspect the groups of compounds a featurization
+cannot tell apart.
+
 ## Reproducing the manuscript
 
 ```bash

@@ -1,0 +1,1287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>capfid · TDC ADMET case study</title>
+<style>
+:root {
+  --ecfp: #4C72B0; --apdp: #DD8452; --chem: #55A868;
+  --ink: #1b1d21; --dim: #6b7280; --line: #e3e5e9; --bg: #ffffff; --panel: #f7f8fa;
+  --accent: #1f77b4; --warn: #c0392b;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--ink); background: var(--bg); overflow: hidden;
+}
+h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+h2 { font-size: 13px; margin: 0 0 6px; font-weight: 650; }
+h3 { font-size: 11px; margin: 14px 0 5px; font-weight: 650; text-transform: uppercase;
+     letter-spacing: 0.06em; color: var(--dim); }
+a { color: var(--accent); }
+code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+header { display: flex; align-items: center; gap: 16px; padding: 8px 14px;
+         border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+header .sub { color: var(--dim); font-size: 11.5px; }
+nav { display: flex; gap: 2px; margin-left: auto; }
+nav button { font: inherit; font-size: 12px; padding: 4px 11px; border: 1px solid transparent;
+             background: none; border-radius: 5px; cursor: pointer; color: var(--dim); }
+nav button:hover { background: var(--panel); }
+nav button.on { background: var(--accent); color: #fff; }
+
+.ctl { display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--dim); }
+select, input[type=search] {
+  font: inherit; font-size: 12px; padding: 3px 5px; border: 1px solid var(--line);
+  border-radius: 4px; background: #fff; color: var(--ink); max-width: 100%;
+}
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.seg button { font: inherit; font-size: 11.5px; padding: 3px 9px; border: 0; background: #fff;
+              cursor: pointer; color: var(--dim); }
+.seg button.on { background: var(--accent); color: #fff; }
+
+.app { display: grid; grid-template-columns: minmax(0, 1fr) 372px; height: calc(100vh - 42px); }
+.app.wide { grid-template-columns: minmax(0, 1fr); }
+.app.wide .side { display: none; }
+.main { overflow: auto; padding: 12px 14px 24px; }
+.side { border-left: 1px solid var(--line); overflow: auto; padding: 12px; background: var(--panel); }
+.tab { display: none; }
+.tab.on { display: block; }
+
+.toolbar { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.maps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.plot { position: relative; border: 1px solid var(--line); border-radius: 6px;
+        background: #fff; overflow: hidden; }
+.plot canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.plot .cap { position: absolute; top: 5px; left: 8px; font-size: 11px; font-weight: 650; }
+.plot .hint { position: absolute; bottom: 4px; right: 6px; font-size: 9.5px; color: var(--dim); }
+.plot.map { aspect-ratio: 1 / 1; }
+.tip { position: fixed; pointer-events: none; background: #1b1d21; color: #fff; font-size: 11px;
+       padding: 4px 7px; border-radius: 4px; z-index: 50; white-space: pre; display: none; }
+
+.cbar { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--dim); }
+.cbar canvas { width: 120px; height: 9px; border-radius: 2px; border: 1px solid var(--line); }
+
+table { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+th, td { text-align: right; padding: 2px 6px; border-bottom: 1px solid var(--line);
+         white-space: nowrap; }
+th { font-weight: 600; color: var(--dim); font-size: 10.5px; text-transform: uppercase;
+     letter-spacing: 0.04em; position: sticky; top: 0; background: var(--bg); z-index: 2; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--ink); }
+td.l, th.l { text-align: left; }
+/* compound identifiers are chemical names in the solubility set, and run very long */
+td.name { max-width: 24em; overflow: hidden; text-overflow: ellipsis; }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: #eef4fb; }
+tbody tr.on { background: #dceafa; }
+.scroll { max-height: 340px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.side table th { background: var(--panel); }
+
+.badge { display: inline-block; font-size: 10px; padding: 0 5px; border-radius: 3px;
+         background: #e8eaee; color: var(--dim); margin-left: 5px; vertical-align: 1px; }
+.badge.pos { background: #fde0e0; color: #a02020; }
+.badge.neg { background: #e2eefb; color: #20538a; }
+.badge.key { background: var(--accent); color: #fff; }
+.conflict { color: var(--warn); font-weight: 600; }
+
+.struct { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 2px;
+          display: flex; align-items: center; justify-content: center; min-height: 40px; }
+.struct svg { max-width: 100%; height: auto; display: block; }
+.struct .smi { font-family: ui-monospace, Menlo, monospace; font-size: 9.5px; color: var(--dim);
+               word-break: break-all; padding: 6px; }
+.nn { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.nn .struct { min-height: 76px; }
+.nn figcaption { font-size: 10px; color: var(--dim); text-align: center; margin-top: 2px; }
+.grid4 { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 7px; }
+.grid4 figcaption { font-size: 10px; text-align: center; color: var(--dim); }
+
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 1px 10px; font-size: 11.5px; }
+.kv dt { color: var(--dim); }
+.kv dd { margin: 0; }
+.note { font-size: 11px; color: var(--dim); margin: 6px 0 0; }
+.prose { max-width: 56em; font-size: 12.5px; line-height: 1.55; }
+.prose li { margin-bottom: 4px; }
+.prose table { margin: 8px 0 16px; table-layout: fixed; }
+.prose td, .prose th { white-space: normal; vertical-align: top; padding: 4px 8px; }
+.prose td:first-child, .prose th:first-child { width: 11em; }
+.swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin: 0 3px 0 8px; }
+#boot { padding: 40px; color: var(--dim); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div id="boot">Unpacking case-study data…</div>
+
+<div id="ui" hidden>
+<header>
+  <h1>capfid · what do ADMET models memorize?</h1>
+  <span class="sub">TDC scaffold split · dropout MLPs · linearized-Laplace capacity</span>
+  <span class="ctl">task
+    <select id="selTask"></select>
+  </span>
+  <span class="ctl">training
+    <span class="seg" id="segRegime"></span>
+  </span>
+  <nav id="tabs"></nav>
+</header>
+
+<div class="app" id="app">
+  <div class="main">
+
+    <!-- ------------------------------------------------------------------ map -->
+    <section class="tab on" data-tab="map">
+      <div class="toolbar">
+        <span class="ctl">colour by
+          <select id="selMetric"></select>
+        </span>
+        <span class="ctl">scale
+          <span class="seg" id="segScale">
+            <button data-v="log" class="on">log</button><button data-v="linear">linear</button>
+          </span>
+        </span>
+        <span class="ctl">show
+          <span class="seg" id="segSplit">
+            <button data-v="train" class="on">train</button><button data-v="test">test</button>
+          </span>
+        </span>
+        <span class="cbar"><span id="cbLo"></span><canvas id="cbar" width="240" height="18"></canvas><span id="cbHi"></span></span>
+      </div>
+      <div class="maps" id="maps"></div>
+      <p class="note">UMAP of every compound in each feature space (grey = compounds of the other
+        splits). Scroll to zoom, drag to pan, double-click to reset. Circled numbers are the key
+        compounds of Figures 5–7. Click a point to inspect it.</p>
+
+      <h3>Ranked compounds <span id="rankWhat" style="text-transform:none;letter-spacing:0"></span></h3>
+      <div class="toolbar">
+        <input type="search" id="search" placeholder="filter by ID or SMILES…" style="width:240px">
+        <span class="ctl"><label><input type="checkbox" id="onlyConflict"> only compounds whose
+          nearest neighbour disagrees</label></span>
+        <span class="ctl" id="rankCount"></span>
+      </div>
+      <div class="scroll"><table id="rankTable"></table></div>
+    </section>
+
+    <!-- -------------------------------------------------------------- compare -->
+    <section class="tab" data-tab="compare">
+      <div class="toolbar">
+        <span class="ctl">x <select id="cmpX"></select> <select id="cmpXF"></select></span>
+        <span class="ctl">y <select id="cmpY"></select> <select id="cmpYF"></select></span>
+        <span class="ctl">split
+          <span class="seg" id="cmpSplit">
+            <button data-v="train" class="on">train</button><button data-v="test">test</button>
+          </span>
+        </span>
+      </div>
+      <div class="toolbar">
+        <span class="ctl">presets</span>
+        <span class="seg" id="presets"></span>
+      </div>
+      <div class="plot" id="cmpPlot" style="height:min(62vh,560px)"></div>
+      <p class="note" id="cmpStats"></p>
+      <p class="note">Each point is a compound, coloured by its label. Points are drawn on log
+        axes where the quantity is non-negative; values at or below the axis minimum are pinned
+        to it. Click a point to inspect it.</p>
+    </section>
+
+    <!-- ------------------------------------------------------------ collisions -->
+    <section class="tab" data-tab="collisions">
+      <div class="toolbar">
+        <span class="ctl">featurization <select id="colFeat"></select></span>
+        <span class="ctl">group by
+          <span class="seg" id="colKind">
+            <button data-v="features" class="on">identical feature vector</button><button data-v="skeleton">same constitution</button>
+          </span>
+        </span>
+        <span class="ctl" id="colSummary"></span>
+      </div>
+      <div class="scroll" style="max-height:300px"><table id="colTable"></table></div>
+      <h3 id="colTitle">Select a group</h3>
+      <p class="note" id="colNote"></p>
+      <div class="grid4" id="colMembers"></div>
+    </section>
+
+    <!-- ---------------------------------------------------------------- models -->
+    <section class="tab" data-tab="models">
+      <h2>Models and their posteriors</h2>
+      <p class="note">One row per task, featurization and training regime (seed 0). γ is the
+        effective number of parameters the posterior determines; the description length is the
+        two-part code (model + data) per compound.</p>
+      <div class="scroll" style="max-height:48vh"><table id="modelTable"></table></div>
+      <h2 style="margin-top:18px">Representation collisions</h2>
+      <p class="note">Groups of training compounds a featurization maps to the same vector. A
+        group <em>conflicts</em> if its labels differ (AMES) or span more than 1 log unit.</p>
+      <div class="scroll" style="max-height:40vh"><table id="colSummaryTable"></table></div>
+    </section>
+
+    <!-- ----------------------------------------------------------------- about -->
+    <section class="tab" data-tab="about">
+      <div class="prose" id="aboutBody"></div>
+    </section>
+
+  </div>
+
+  <!-- ------------------------------------------------------------------- side -->
+  <aside class="side" id="side">
+    <div id="detail"></div>
+  </aside>
+</div>
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>const PAYLOAD = "/*__PAYLOAD__*/";</script>
+<script src="https://unpkg.com/@rdkit/rdkit/dist/RDKit_minimal.js" crossorigin="anonymous"></script>
+<script>
+"use strict";
+
+/* ===================================================================== payload */
+
+async function unpack(b64) {
+  if (typeof DecompressionStream !== "function")
+    throw new Error("this browser has no DecompressionStream (needs Chrome 80+, Safari 16.4+, Firefox 113+)");
+  let bytes;
+  try {                                   // browsers decode base64 natively via data: URLs
+    bytes = await (await fetch("data:application/octet-stream;base64," + b64)).arrayBuffer();
+  } catch (e) {
+    const s = atob(b64), u = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i);
+    bytes = u.buffer;
+  }
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return await new Response(stream).json();
+}
+
+/* ====================================================================== colour */
+
+const CMAP = {
+  magma_r: ['#fcfdbf','#fde0a1','#fec287','#fea571','#fb8761','#f4695c','#e55064','#cf4070',
+            '#b5367a','#9b2e7f','#812581','#681c81','#4f127b','#341069','#1c1044','#090720','#000004'],
+  viridis: ['#440154','#48186a','#472d7b','#424086','#3b528b','#33638d','#2c728e','#26828e',
+            '#21918c','#1fa088','#28ae80','#3fbc73','#5ec962','#84d44b','#addc30','#d8e219','#fde725'],
+  rdbu:    ['#053061','#175290','#2a71b2','#3f8ec0','#6bacd1','#9bc9e0','#c2ddec','#e0ecf3',
+            '#f7f6f6','#fbe5d8','#fbccb4','#f5aa89','#e48066','#d05548','#ba2832','#930e26','#67001f'],
+};
+const FCOL = { ECFP4: "#4C72B0", APDP: "#DD8452", CheMeleon: "#55A868" };
+const GREY = "#d9dce1";
+
+function hex2rgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; }
+const CMAP_RGB = Object.fromEntries(Object.entries(CMAP).map(([k, v]) => [k, v.map(hex2rgb)]));
+
+/** Sample a colormap at t in [0,1], returned as a css colour. */
+function ramp(name, t) {
+  const c = CMAP_RGB[name];
+  t = Math.max(0, Math.min(1, t)) * (c.length - 1);
+  const i = Math.min(c.length - 2, Math.floor(t)), f = t - i, a = c[i], b = c[i + 1];
+  return `rgb(${Math.round(a[0] + f * (b[0] - a[0]))},${Math.round(a[1] + f * (b[1] - a[1]))},`
+       + `${Math.round(a[2] + f * (b[2] - a[2]))})`;
+}
+
+/* ======================================================================= plot */
+
+function niceTicks(lo, hi, log, n = 5) {
+  const out = [];
+  if (log) {
+    for (let e = Math.floor(Math.log10(lo)); e <= Math.ceil(Math.log10(hi)); e++) {
+      const v = Math.pow(10, e);
+      if (v >= lo * 0.999 && v <= hi * 1.001) out.push(v);
+    }
+    if (out.length < 2) { out.length = 0; for (const f of [1, 2, 5]) for (let e = -6; e < 6; e++) {
+      const v = f * Math.pow(10, e); if (v >= lo && v <= hi) out.push(v); } }
+    return out.slice(0, 9);
+  }
+  const span = hi - lo, step = Math.pow(10, Math.floor(Math.log10(span / n)));
+  const mult = [1, 2, 2.5, 5, 10].find(m => span / (step * m) <= n) || 10;
+  const s = step * mult;
+  for (let v = Math.ceil(lo / s) * s; v <= hi + 1e-9; v += s) out.push(+v.toFixed(10));
+  return out;
+}
+
+const fmt = (v, d = 3) => {
+  if (v === null || v === undefined || !isFinite(v)) return "–";
+  const a = Math.abs(v);
+  if (a === 0) return "0";
+  if (a >= 1e5 || a < 1e-3) return v.toExponential(1);
+  return String(+v.toPrecision(d));
+};
+const SUP = { "-": "⁻", 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹" };
+/** Axis ticks: powers of ten as 10ⁿ, everything else as a plain decimal. */
+const fmtTick = v => {
+  const a = Math.abs(v);
+  if (a === 0) return "0";
+  if (a >= 1e5 || a < 1e-3) {
+    const e = Math.round(Math.log10(a));
+    if (Math.abs(a / Math.pow(10, e) - 1) < 1e-9)
+      return (v < 0 ? "−" : "") + "10" + String(e).split("").map(c => SUP[c]).join("");
+    return v.toExponential(0);
+  }
+  return String(+v.toPrecision(3));
+};
+
+/** Canvas scatter with a static data layer, an overlay layer, zoom, pan and picking. */
+class Plot {
+  constructor(host, opts = {}) {
+    this.host = host; this.opts = opts;
+    this.base = document.createElement("canvas");
+    this.over = document.createElement("canvas");
+    host.append(this.base, this.over);
+    this.pad = opts.axes ? { l: 54, r: 12, t: 12, b: 36 } : { l: 4, r: 4, t: 4, b: 4 };
+    this.tx = { k: 1, dx: 0, dy: 0 };
+    this.hover = -1;
+    this._bind();
+    new ResizeObserver(() => this.resize()).observe(host);
+  }
+  setData(d) {                       // {x, y, idx, colorOf, logx, logy, radius}
+    Object.assign(this, d);
+    this.logx = !!d.logx; this.logy = !!d.logy;
+    this._limits(); this.resize();
+  }
+  _limits() {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const i of this.idx) {
+      const a = this.x[i], b = this.y[i];
+      if (isFinite(a)) { if (a < x0) x0 = a; if (a > x1) x1 = a; }
+      if (isFinite(b)) { if (b < y0) y0 = b; if (b > y1) y1 = b; }
+    }
+    if (!isFinite(x0)) { x0 = 0; x1 = 1; } if (!isFinite(y0)) { y0 = 0; y1 = 1; }
+    if (this.logx) { x0 = Math.max(x0, (this.opts.floorx || 1e-4)); x1 = Math.max(x1, x0 * 10); }
+    if (this.logy) { y0 = Math.max(y0, (this.opts.floory || 1e-4)); y1 = Math.max(y1, y0 * 10); }
+    const px = (x1 - x0) * 0.03 || 1, py = (y1 - y0) * 0.03 || 1;
+    this.lim = this.logx || this.logy
+      ? { x0, x1, y0, y1 }
+      : { x0: x0 - px, x1: x1 + px, y0: y0 - py, y1: y1 + py };
+    if (this.logx) { this.lim.x0 = x0 / 1.3; this.lim.x1 = x1 * 1.3; }
+    if (this.logy) { this.lim.y0 = y0 / 1.3; this.lim.y1 = y1 * 1.3; }
+  }
+  _sx(v) {
+    const L = this.lim, p = this.pad, w = this.W - p.l - p.r;
+    const t = this.logx ? (Math.log(Math.max(v, L.x0)) - Math.log(L.x0)) / (Math.log(L.x1) - Math.log(L.x0))
+                        : (v - L.x0) / (L.x1 - L.x0);
+    return p.l + (t * w) * this.tx.k + this.tx.dx;
+  }
+  _sy(v) {
+    const L = this.lim, p = this.pad, h = this.H - p.t - p.b;
+    const t = this.logy ? (Math.log(Math.max(v, L.y0)) - Math.log(L.y0)) / (Math.log(L.y1) - Math.log(L.y0))
+                        : (v - L.y0) / (L.y1 - L.y0);
+    return p.t + (h - t * h) * this.tx.k + this.tx.dy;
+  }
+  resize() {
+    const r = this.host.getBoundingClientRect();
+    if (!r.width) return;
+    this.W = r.width; this.H = r.height;
+    const dpr = window.devicePixelRatio || 1;
+    for (const c of [this.base, this.over]) {
+      c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr);
+      c.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    this.render();
+  }
+  render() {
+    if (!this.idx || !this.W) return;
+    const ctx = this.base.getContext("2d");
+    ctx.clearRect(0, 0, this.W, this.H);
+    if (this.opts.axes) this._axes(ctx);
+    const r = this.radius || 2.2, d = r * 2;
+    const buckets = new Map();
+    this.px = new Float32Array(this.x.length); this.py = new Float32Array(this.x.length);
+    for (const i of this.idx) {
+      const X = this._sx(this.x[i]), Y = this._sy(this.y[i]);
+      this.px[i] = X; this.py[i] = Y;
+      if (X < -5 || Y < -5 || X > this.W + 5 || Y > this.H + 5) continue;
+      const c = this.colorOf(i);
+      let b = buckets.get(c); if (!b) buckets.set(c, b = []);
+      b.push(X, Y);
+    }
+    for (const [c, pts] of buckets) {
+      ctx.fillStyle = c;
+      for (let j = 0; j < pts.length; j += 2) ctx.fillRect(pts[j] - r, pts[j + 1] - r, d, d);
+    }
+    this.renderOverlay();
+  }
+  _axes(ctx) {
+    const p = this.pad, L = this.lim;
+    ctx.save();
+    ctx.strokeStyle = "#e3e5e9"; ctx.fillStyle = "#6b7280";
+    ctx.font = "10px -apple-system, Segoe UI, sans-serif"; ctx.lineWidth = 1;
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (const v of niceTicks(L.x0, L.x1, this.logx)) {
+      const X = this._sx(v); if (X < p.l - 1 || X > this.W - p.r + 1) continue;
+      ctx.beginPath(); ctx.moveTo(X, p.t); ctx.lineTo(X, this.H - p.b); ctx.stroke();
+      ctx.fillText(fmtTick(v), X, this.H - p.b + 5);
+    }
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (const v of niceTicks(L.y0, L.y1, this.logy)) {
+      const Y = this._sy(v); if (Y < p.t - 1 || Y > this.H - p.b + 1) continue;
+      ctx.beginPath(); ctx.moveTo(p.l, Y); ctx.lineTo(this.W - p.r, Y); ctx.stroke();
+      ctx.fillText(fmtTick(v), p.l - 6, Y);
+    }
+    ctx.fillStyle = "#1b1d21"; ctx.font = "11px -apple-system, Segoe UI, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    if (this.opts.xlabel) ctx.fillText(this.opts.xlabel, (p.l + this.W - p.r) / 2, this.H - 4);
+    ctx.save(); ctx.translate(11, (p.t + this.H - p.b) / 2); ctx.rotate(-Math.PI / 2);
+    if (this.opts.ylabel) ctx.fillText(this.opts.ylabel, 0, 0); ctx.restore();
+    ctx.restore();
+  }
+  renderOverlay() {
+    if (!this.px) return;
+    const ctx = this.over.getContext("2d");
+    ctx.clearRect(0, 0, this.W, this.H);
+    (this.marks || []).forEach(m => {
+      const X = this.px[m.i], Y = this.py[m.i];
+      if (!isFinite(X)) return;
+      ctx.beginPath(); ctx.arc(X, Y, 6, 0, 7); ctx.strokeStyle = m.color; ctx.lineWidth = 1.2;
+      ctx.stroke();
+      if (m.label) {
+        ctx.fillStyle = m.color; ctx.font = "bold 10px -apple-system, Segoe UI, sans-serif";
+        ctx.textAlign = "left"; ctx.textBaseline = "bottom"; ctx.fillText(m.label, X + 6, Y - 4);
+      }
+    });
+    for (const [i, col, rad] of [[this.hover, "#111", 6], [this.sel, "#1f77b4", 8]]) {
+      if (i === undefined || i < 0 || !isFinite(this.px[i])) continue;
+      ctx.beginPath(); ctx.arc(this.px[i], this.py[i], rad, 0, 7);
+      ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke();
+    }
+  }
+  pick(mx, my, tol = 12) {
+    let best = -1, bd = tol * tol;
+    for (const i of this.idx) {
+      const dx = this.px[i] - mx, dy = this.py[i] - my, d = dx * dx + dy * dy;
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+  _bind() {
+    const h = this.host;
+    h.addEventListener("mousemove", e => {
+      const r = h.getBoundingClientRect();
+      if (this.drag) {
+        this.tx.dx += e.clientX - this.drag.x; this.tx.dy += e.clientY - this.drag.y;
+        this.drag = { x: e.clientX, y: e.clientY }; this.render(); return;
+      }
+      const i = this.pick(e.clientX - r.left, e.clientY - r.top);
+      if (i !== this.hover) { this.hover = i; this.renderOverlay(); }
+      this.opts.onHover && this.opts.onHover(i, e);
+    });
+    h.addEventListener("mouseleave", () => {
+      this.hover = -1; this.renderOverlay(); this.opts.onHover && this.opts.onHover(-1);
+    });
+    h.addEventListener("mousedown", e => { this.drag = { x: e.clientX, y: e.clientY }; });
+    window.addEventListener("mouseup", () => { this.drag = null; });
+    h.addEventListener("click", e => {
+      const r = h.getBoundingClientRect();
+      const i = this.pick(e.clientX - r.left, e.clientY - r.top);
+      if (i >= 0 && this.opts.onPick) this.opts.onPick(i);
+    });
+    h.addEventListener("wheel", e => {
+      e.preventDefault();
+      const r = h.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+      const f = Math.exp(-e.deltaY * 0.0015), k = Math.max(0.6, Math.min(80, this.tx.k * f));
+      const g = k / this.tx.k;
+      this.tx.dx = mx - g * (mx - this.tx.dx); this.tx.dy = my - g * (my - this.tx.dy);
+      this.tx.k = k; this.render();
+    }, { passive: false });
+    h.addEventListener("dblclick", () => { this.tx = { k: 1, dx: 0, dy: 0 }; this.render(); });
+  }
+}
+
+/* ==================================================================== metrics */
+
+/** Per-compound quantities offered to the colour and axis menus. ``get`` reads the model
+ *  arrays; ``dom`` restricts it to the splits on which it is defined — for the quantities
+ *  that come straight out of the payload it is overwritten at load time by the generator's
+ *  own DOMAIN, so the two cannot drift apart. */
+const METRICS = [
+  { k: "information", lab: "information 𝓘 (bits)", log: true, dom: "train",
+    tip: "bits of the posterior this compound's label is responsible for" },
+  { k: "memorization", lab: "memorization (bits)", log: true, dom: "train",
+    tip: "bits by which the model's prediction of this label improves because it was trained on" },
+  { k: "retrain", lab: "memorization by retraining (bits)", log: true, dom: "train",
+    tip: "Feldman–Zhang memorization from 48 retrainings on random 70% subsets" },
+  { k: "volume", lab: "volume (bits)", log: true, dom: "train+test",
+    tip: "posterior contraction this compound causes; on test compounds, prospective (label-free)" },
+  { k: "dof", lab: "effective parameters γ", log: true, dom: "train",
+    tip: "share of the effective parameters the posterior spends on this compound" },
+  { k: "codelen", lab: "data code length (bits)", log: false, dom: "train+test",
+    tip: "−log₂ p(y | refit posterior mean): bits needed to transmit this label",
+    get: (M, i) => -M.fidelity[i] },
+  { k: "error", lab: "|label − network prediction|", log: false, dom: "train+test",
+    get: (M, i, T) => Math.abs(T.y[i] - M.pred[i]) },
+  { k: "heldout_error", lab: "|label − held-out prediction|", log: false, dom: "train",
+    tip: "error of the GP mean refit without this compound (leave-one-out)",
+    get: (M, i, T) => Math.abs(T.y[i] - M.gp_heldout[i]) },
+  { k: "shift", lab: "|prediction shift when dropped|", log: false, dom: "train",
+    tip: "how far the model's own prediction moves when this compound is left out",
+    get: (M, i) => Math.abs(M.gp[i] - M.gp_heldout[i]) },
+  { k: "pred", lab: "network prediction", log: false, dom: "train+test" },
+  { k: "y", lab: "label", log: false, dom: "all", get: (M, i, T) => T.y[i] },
+];
+const MET = Object.fromEntries(METRICS.map(m => [m.k, m]));
+const getter = m => m.get || ((M, i) => M[m.k][i]);
+
+/* ====================================================================== state */
+
+let D, RDKit = null;
+const S = {
+  task: "AMES", regime: "early", tab: "map",
+  metric: "information", scale: "log", split: "train", sel: -1,
+  cmp: { x: "information", xm: "ECFP4|early", y: "retrain", ym: "ECFP4|early", split: "train" },
+  col: { feat: "APDP", kind: "features", group: -1 },
+};
+const T = () => D.tasks[S.task];
+const M = (f, r) => T().models[f + "|" + (r || S.regime)];
+const isTrain = i => T().split[i] === 0;
+const inDom = (m, i) => m.dom === "all" || (m.dom === "train" ? T().split[i] === 0
+                                                              : T().split[i] !== 1);
+
+const el = id => document.getElementById(id);
+const h = (tag, attrs, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") n.className = v;
+    else if (k === "html") n.innerHTML = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined) n.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) if (c !== null && c !== undefined)
+    n.append(c.nodeType ? c : document.createTextNode(c));
+  return n;
+};
+const opt = (v, t) => h("option", { value: v }, t ?? v);
+
+/* ================================================================== chemistry */
+
+const svgCache = new Map();
+function depict(smiles, w, h_) {
+  const key = smiles + "|" + w;
+  if (svgCache.has(key)) return svgCache.get(key);
+  let out = null;
+  if (RDKit) {
+    let mol = null;
+    try {
+      mol = RDKit.get_mol(smiles);
+      if (mol && mol.is_valid()) out = mol.get_svg(w, h_);
+    } catch (e) { /* fall through to the SMILES string */ }
+    finally { if (mol) mol.delete(); }
+  }
+  svgCache.set(key, out);
+  return out;
+}
+function structure(smiles, w = 320, h_ = 200, cls = "struct") {
+  const svg = depict(smiles, w, h_);
+  return svg ? h("div", { class: cls, html: svg })
+             : h("div", { class: cls }, h("div", { class: "smi" }, smiles));
+}
+
+/* ================================================================ label format */
+
+const isBin = () => T().kind === "binary";
+function labelText(v) {
+  if (v === null || v === undefined) return "–";
+  return isBin() ? (v > 0.5 ? "positive" : "negative") : v.toFixed(2) + " " + T().unit;
+}
+function labelBadge(v) {
+  return isBin() ? h("span", { class: "badge " + (v > 0.5 ? "pos" : "neg") },
+                     v > 0.5 ? "mutagenic" : "non-mutagenic")
+                 : h("span", { class: "badge" }, v.toFixed(2) + " " + T().unit);
+}
+const predText = v => (v === null || !isFinite(v)) ? "–"
+  : (isBin() ? "p = " + v.toFixed(3) : v.toFixed(2));
+/** two labels disagree if the classes differ, or the regression values differ by > 1 unit */
+const disagree = (a, b) => isBin() ? (a > 0.5) !== (b > 0.5) : Math.abs(a - b) > 1;
+
+/* ================================================================== colouring */
+
+/** One colour scale shared by the three map panels, so their colours are comparable: the
+ *  limits are percentiles of the pooled values of all three featurizations. */
+function scaleFor(m, log) {
+  const g = getter(m), vals = [];
+  for (const f of D.features) {
+    const Mo = M(f);
+    for (let i = 0; i < T().n; i++) if (inDom(m, i) && shown(i)) {
+      const v = g(Mo, i, T());
+      if (isFinite(v)) vals.push(v);
+    }
+  }
+  if (m.k === "y") { vals.length = 0; for (let i = 0; i < T().n; i++) if (shown(i)) vals.push(T().y[i]); }
+  vals.sort((a, b) => a - b);
+  if (!vals.length) return { lo: 0, hi: 1, log: false, map: () => GREY };
+  const q = p => vals[Math.min(vals.length - 1, Math.floor(p * (vals.length - 1)))];
+  let lo = q(0.01), hi = q(0.99);
+  if (log) {
+    // anchor the light end at the median so that the colours resolve the tail the analysis is
+    // about, rather than spending most of the ramp on compounds no model spends capacity on
+    const pos = vals.filter(v => v > 0);
+    lo = pos.length ? Math.max(pos[Math.floor(0.5 * (pos.length - 1))], 1e-4) : 1e-4;
+    hi = Math.max(q(0.999), lo * 100);
+  }
+  if (hi <= lo) hi = lo + 1e-9;
+  const name = (m.k === "y" || m.k === "pred") ? (isBin() ? "rdbu" : "viridis") : "magma_r";
+  return {
+    lo, hi, log, name,
+    map(v) {
+      if (v === null || !isFinite(v)) return GREY;
+      const t = log ? (Math.log(Math.max(v, lo)) - Math.log(lo)) / (Math.log(hi) - Math.log(lo))
+                    : (v - lo) / (hi - lo);
+      return ramp(name, t);
+    },
+  };
+}
+const shown = i => {
+  const s = T().split[i];
+  return S.split === "train" ? s === 0 : s === 2;
+};
+
+/* ======================================================================= maps */
+
+const maps = {};
+function buildMaps() {
+  const host = el("maps");
+  host.innerHTML = "";
+  for (const f of D.features) {
+    const box = h("div", { class: "plot map" },
+      h("div", { class: "cap", style: `color:${FCOL[f]}` }, f),
+      h("div", { class: "hint" }, "scroll = zoom · dblclick = reset"));
+    host.append(box);
+    maps[f] = new Plot(box, { onPick: select, onHover: (i, e) => tip(i, e, f) });
+  }
+}
+
+function drawMaps() {
+  const m = MET[S.metric], log = S.scale === "log" && m.log;
+  const sc = scaleFor(m, log);
+  const idxAll = [], idxOther = [];
+  for (let i = 0; i < T().n; i++) (shown(i) ? idxAll : idxOther).push(i);
+  const g = getter(m);
+  for (const f of D.features) {
+    const U = T().umap[f], Mo = M(f);
+    // background compounds first, then shown compounds sorted so high values land on top
+    const order = idxAll.slice().sort((a, b) => {
+      const va = g(Mo, a, T()), vb = g(Mo, b, T());
+      return (isFinite(va) ? va : -Infinity) - (isFinite(vb) ? vb : -Infinity);
+    });
+    const p = maps[f];
+    p.setData({
+      x: U.x, y: U.y, idx: idxOther.concat(order), radius: 1.9,
+      colorOf: i => shown(i) && inDom(m, i) ? sc.map(g(Mo, i, T())) : GREY,
+    });
+    p.marks = T().keys.map(k => ({ i: k.row, color: "#1f77b4", label: String(k.key) }));
+    p.sel = S.sel;
+    p.renderOverlay();
+  }
+  drawColorbar(sc, m);
+  el("rankWhat").textContent = "by " + m.lab + (m.dom === "train" ? " (training compounds)" : "");
+}
+
+function drawColorbar(sc, m) {
+  const c = el("cbar"), ctx = c.getContext("2d");
+  ctx.clearRect(0, 0, c.width, c.height);
+  for (let x = 0; x < c.width; x++) {
+    ctx.fillStyle = ramp(sc.name || "magma_r", x / (c.width - 1));
+    ctx.fillRect(x, 0, 1, c.height);
+  }
+  el("cbLo").textContent = (sc.log ? "≤ " : "") + fmt(sc.lo, 2);
+  el("cbHi").textContent = "≥ " + fmt(sc.hi, 2) + (sc.log ? " (log)" : "");
+}
+
+function tip(i, e, f) {
+  const t = el("tip");
+  if (i < 0 || !e) { t.style.display = "none"; return; }
+  const m = MET[S.metric], v = inDom(m, i) ? getter(m)(M(f), i, T()) : null;
+  t.textContent = `${T().ids[i]}\n${labelText(T().y[i])}\n${m.lab}: ${fmt(v)}`;
+  t.style.display = "block";
+  t.style.left = (e.clientX + 14) + "px"; t.style.top = (e.clientY + 14) + "px";
+}
+
+/* ================================================================ ranked list */
+
+function drawRank() {
+  const m = MET[S.metric], g = getter(m);
+  const q = el("search").value.trim().toLowerCase();
+  const only = el("onlyConflict").checked;
+  const rows = [];
+  for (let i = 0; i < T().n; i++) {
+    if (!shown(i) || !inDom(m, i)) continue;
+    if (q && !(T().ids[i].toLowerCase().includes(q) || T().smiles[i].toLowerCase().includes(q))) continue;
+    const nn = T().nn_idx[i][0];
+    if (only && !disagree(T().y[i], T().y[nn])) continue;
+    const vals = D.features.map(f => g(M(f), i, T()));
+    rows.push({ i, vals, mean: vals.reduce((a, b) => a + (isFinite(b) ? b : 0), 0) / vals.length });
+  }
+  rows.sort((a, b) => b.mean - a.mean);
+  el("rankCount").textContent = `${rows.length.toLocaleString()} compounds`;
+  const keyOf = new Map(T().keys.map(k => [k.row, k.key]));
+  const tbl = el("rankTable");
+  tbl.innerHTML = "";
+  tbl.append(h("thead", {}, h("tr", {},
+    h("th", { class: "l" }, "#"), h("th", { class: "l" }, "compound"),
+    ...D.features.map(f => h("th", { style: `color:${FCOL[f]}` }, f)),
+    h("th", {}, "label"),
+    h("th", { title: "mean over the three featurizations" }, "mean pred"),
+    h("th", { title: "mean prediction of the posteriors refit without this compound" },
+      "mean held-out"),
+    h("th", {}, "nearest Tc"), h("th", {}, "its label"))));
+  const body = h("tbody");
+  const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+  rows.slice(0, 250).forEach((r, n) => {
+    const i = r.i, nn = T().nn_idx[i][0], bad = disagree(T().y[i], T().y[nn]);
+    const kn = keyOf.get(i);
+    body.append(h("tr", { class: i === S.sel ? "on" : "", onclick: () => select(i) },
+      h("td", { class: "l" }, String(n + 1)),
+      h("td", { class: "l name", title: T().ids[i] },
+        T().ids[i], kn ? h("span", { class: "badge key" }, "key " + kn) : null),
+      ...r.vals.map(v => h("td", {}, fmt(v))),
+      h("td", {}, labelText(T().y[i])),
+      h("td", {}, predText(mean(D.features.map(f => M(f).pred[i])))),
+      h("td", {}, isTrain(i) ? predText(mean(D.features.map(f => M(f).gp_heldout[i]))) : "–"),
+      h("td", {}, T().nn_sim[i][0].toFixed(2)),
+      h("td", { class: bad ? "conflict" : "" }, labelText(T().y[nn]))));
+  });
+  tbl.append(body);
+}
+
+/* ============================================================== detail panel */
+
+function select(i) {
+  S.sel = i;
+  for (const f of D.features) if (maps[f]) { maps[f].sel = i; maps[f].renderOverlay(); }
+  if (cmpPlot) { cmpPlot.sel = i; cmpPlot.renderOverlay(); }
+  drawDetail(); drawRank();
+}
+
+function drawDetail() {
+  const box = el("detail");
+  box.innerHTML = "";
+  const i = S.sel;
+  if (i < 0) {
+    box.append(h("p", { class: "note" },
+      "Click a compound in any plot, or a row of the ranked table, to inspect it here."));
+    box.append(h("h3", {}, "Key compounds"));
+    const list = h("div", {});
+    for (const k of T().keys)
+      list.append(h("div", { style: "cursor:pointer;padding:2px 0", onclick: () => select(k.row) },
+        h("span", { class: "badge key" }, String(k.key)), " ",
+        T().ids[k.row], " ", h("span", { class: "badge" }, k.reason)));
+    box.append(list);
+    return;
+  }
+  const split = ["train", "valid", "test"][T().split[i]];
+  const keyOf = new Map(T().keys.map(k => [k.row, k.key]));
+  box.append(h("h2", {}, T().ids[i],
+    h("span", { class: "badge" }, split),
+    keyOf.has(i) ? h("span", { class: "badge key" }, "key " + keyOf.get(i)) : null));
+  box.append(structure(T().smiles[i], 340, 190));
+  box.append(h("div", { class: "kv", style: "margin-top:6px" },
+    h("dt", {}, "label"), h("dd", {}, labelBadge(T().y[i])),
+    h("dt", {}, "SMILES"), h("dd", { class: "mono", style: "font-size:10px;word-break:break-all" },
+      T().smiles[i])));
+
+  // one column per featurization, for the regime chosen in the header
+  box.append(h("h3", {}, `capfid · ${S.regime === "early" ? "early stopping" : "100 epochs"}`));
+  const rows = [
+    ["effective parameters γ", Mo => Mo.dof[i], true],
+    ["information 𝓘 (bits)", Mo => Mo.information[i], true],
+    ["memorization (bits)", Mo => Mo.memorization[i], true],
+    ["by retraining (bits)", Mo => Mo.retrain[i], true],
+    ["volume (bits)", Mo => Mo.volume[i], false],
+    ["data code (bits)", Mo => -Mo.fidelity[i], false],
+    ["network prediction", Mo => Mo.pred[i], false],
+    ["refit GP mean", Mo => Mo.gp[i], true],
+    ["held-out GP mean", Mo => Mo.gp_heldout[i], true],
+  ];
+  const t = h("table");
+  t.append(h("thead", {}, h("tr", {}, h("th", { class: "l" }, ""),
+    ...D.features.map(f => h("th", { style: `color:${FCOL[f]}` }, f)))));
+  const tb = h("tbody");
+  for (const [lab, get, trainOnly] of rows) {
+    if (trainOnly && split !== "train") continue;
+    const isPred = lab.includes("prediction") || lab.includes("GP mean");
+    tb.append(h("tr", {}, h("td", { class: "l" }, lab),
+      ...D.features.map(f => {
+        const v = get(M(f));
+        return h("td", {}, (v === null || !isFinite(v)) ? "–" : (isPred ? predText(v) : fmt(v)));
+      })));
+  }
+  t.append(tb);
+  box.append(t);
+  if (split === "train") {
+    const best = Math.max(...D.features.map(f => M(f).memorization[i]));
+    const rt = Math.max(...D.features.map(f => M(f).retrain[i]));
+    let txt = best > 0.5
+      ? `Refitting the posterior without this compound costs up to ${fmt(best)} bits on its own `
+        + `label: the model is storing it rather than generalizing to it.`
+      : `Refitting the posterior without this compound moves its own prediction by at most `
+        + `${fmt(best)} bits.`;
+    if (rt > Math.max(2 * best, 1))
+      txt += ` Retraining from scratch without it costs up to ${fmt(rt)} bits — far more, `
+           + `because the posterior conditions on tangent features that were themselves fit `
+           + `to these labels, while a retrained network has to rediscover them.`;
+    box.append(h("p", { class: "note" }, txt));
+  }
+  if (split === "test") {
+    box.append(h("p", { class: "note" },
+      "A test compound: only the label-free quantities (volume, prediction) are defined."));
+  }
+
+  box.append(h("h3", {}, "Nearest training neighbours (ECFP4 Tanimoto)"));
+  const nn = h("div", { class: "nn" });
+  T().nn_idx[i].forEach((j, k) => {
+    const bad = disagree(T().y[i], T().y[j]);
+    nn.append(h("figure", { style: "margin:0;cursor:pointer", onclick: () => select(j) },
+      structure(T().smiles[j], 150, 110),
+      h("figcaption", { class: bad ? "conflict" : "" },
+        `Tc ${T().nn_sim[i][k].toFixed(2)}`, h("br"), labelText(T().y[j]))));
+  });
+  box.append(nn);
+  const bad = disagree(T().y[i], T().y[T().nn_idx[i][0]]);
+  if (bad) box.append(h("p", { class: "note conflict" },
+    "Its nearest neighbour carries the opposite label: a model that generalizes smoothly in "
+    + "this representation cannot get both right."));
+
+  const gs = T().groups.filter(g => g.regime === S.regime && g.members.includes(i));
+  if (gs.length) {
+    box.append(h("h3", {}, "Collision groups"));
+    for (const g of gs)
+      box.append(h("div", { style: "cursor:pointer;padding:1px 0", onclick: () => {
+        S.col = { feat: g.feature, kind: g.kind, group: T().groups.indexOf(g) };
+        showTab("collisions"); drawCollisions();
+      } }, `${g.feature} · ${g.kind === "features" ? "identical vector" : "same constitution"} · `
+         + `${g.n} compounds, labels ${labelText(g.y_min)} to ${labelText(g.y_max)}`));
+  }
+}
+
+/* ==================================================================== compare */
+
+let cmpPlot = null;
+function buildCompare() {
+  cmpPlot = new Plot(el("cmpPlot"), {
+    axes: true, onPick: select,
+    onHover: (i, e) => {
+      const t = el("tip");
+      if (i < 0) { t.style.display = "none"; return; }
+      t.textContent = `${T().ids[i]}\n${labelText(T().y[i])}`;
+      t.style.display = "block";
+      t.style.left = (e.clientX + 14) + "px"; t.style.top = (e.clientY + 14) + "px";
+    },
+  });
+}
+
+function spearman(a, b) {
+  const n = a.length;
+  if (n < 3) return NaN;
+  const rank = v => {
+    const o = v.map((x, i) => [x, i]).sort((p, q) => p[0] - q[0]);
+    const r = new Float64Array(n);
+    for (let i = 0; i < n;) {
+      let j = i; while (j + 1 < n && o[j + 1][0] === o[i][0]) j++;
+      const mean = (i + j) / 2 + 1;
+      for (let k = i; k <= j; k++) r[o[k][1]] = mean;
+      i = j + 1;
+    }
+    return r;
+  };
+  const ra = rank(a), rb = rank(b);
+  let sa = 0, sb = 0;
+  for (let i = 0; i < n; i++) { sa += ra[i]; sb += rb[i]; }
+  sa /= n; sb /= n;
+  let num = 0, da = 0, db = 0;
+  for (let i = 0; i < n; i++) {
+    const x = ra[i] - sa, y = rb[i] - sb;
+    num += x * y; da += x * x; db += y * y;
+  }
+  return num / Math.sqrt(da * db);
+}
+
+const modelLabel = k => k.split("|")[0] + (k.endsWith("early") ? ", early" : ", 100 ep");
+
+function drawCompare() {
+  const c = S.cmp;
+  const mx = MET[c.x], my = MET[c.y];
+  const Mx = T().models[c.xm], My = T().models[c.ym], gx = getter(mx), gy = getter(my);
+  const idx = [], X = new Float64Array(T().n), Y = new Float64Array(T().n);
+  const wantTrain = c.split === "train";
+  for (let i = 0; i < T().n; i++) {
+    const s = T().split[i];
+    if (wantTrain ? s !== 0 : s !== 2) continue;
+    if (!inDom(mx, i) || !inDom(my, i)) continue;
+    const a = gx(Mx, i, T()), b = gy(My, i, T());
+    if (!isFinite(a) || !isFinite(b)) continue;
+    X[i] = a; Y[i] = b; idx.push(i);
+  }
+  const col = isBin() ? (i => T().y[i] > 0.5 ? "#c0392b" : "#2a71b2")
+                      : (i => {
+                        const ys = T().y, lo = T()._ylo, hi = T()._yhi;
+                        return ramp("viridis", (ys[i] - lo) / (hi - lo));
+                      });
+  cmpPlot.opts.xlabel = `${mx.lab} — ${modelLabel(c.xm)}`;
+  cmpPlot.opts.ylabel = `${my.lab} — ${modelLabel(c.ym)}`;
+  cmpPlot.opts.floorx = 1e-4; cmpPlot.opts.floory = 1e-4;
+  cmpPlot.setData({ x: X, y: Y, idx, logx: mx.log, logy: my.log, radius: 1.8, colorOf: col });
+  cmpPlot.sel = S.sel; cmpPlot.renderOverlay();
+  if (!idx.length) {
+    const bad = [mx, my].filter(m => m.dom === "train").map(m => m.lab).join(" and ");
+    el("cmpStats").innerHTML = `No points: ${bad} ${bad.includes(" and ") ? "are" : "is"} `
+      + `defined only for training compounds.`;
+    return;
+  }
+  const a = idx.map(i => X[i]), b = idx.map(i => Y[i]);
+  const legend = isBin()
+    ? `<span class="swatch" style="background:#c0392b"></span>positive`
+      + `<span class="swatch" style="background:#2a71b2"></span>negative`
+    : [0, 0.5, 1].map(t => `<span class="swatch" style="background:${ramp("viridis", t)}"></span>`
+        + fmt(T()._ylo + t * (T()._yhi - T()._ylo), 2)).join("");
+  el("cmpStats").innerHTML =
+    `<b>${idx.length.toLocaleString()}</b> compounds · Spearman ρ = `
+    + `<b>${spearman(a, b).toFixed(2)}</b> · label: ${legend}`;
+}
+
+/** Preset axis pairs. ``xm``/``ym`` are filled in from the header's regime unless a preset
+ *  names one, as the early-versus-long comparison does. */
+const PRESETS = [
+  ["𝓘 vs retraining", { x: "information", y: "retrain", split: "train" }],
+  ["𝓘: ECFP4 vs CheMeleon", { x: "information", xf: "ECFP4", y: "information", yf: "CheMeleon",
+                              split: "train" }],
+  ["𝓘: early vs 100 epochs", { x: "information", xm: "ECFP4|early", y: "information",
+                               ym: "ECFP4|long", split: "train" }],
+  ["memorization vs held-out error", { x: "memorization", y: "heldout_error", split: "train" }],
+  ["volume vs test error", { x: "volume", y: "error", split: "test" }],
+  ["code length vs 𝓘", { x: "codelen", y: "information", split: "train" }],
+];
+/** Apply a preset, resolving any featurization it names against the current regime. */
+function applyPreset(p) {
+  Object.assign(S.cmp, { xm: D.features[0] + "|" + S.regime, ym: D.features[0] + "|" + S.regime }, p);
+  if (p.xf) S.cmp.xm = p.xf + "|" + S.regime;
+  if (p.yf) S.cmp.ym = p.yf + "|" + S.regime;
+  syncCompare();
+}
+
+/* ================================================================= collisions */
+
+function drawCollisions() {
+  const gs = T().groups
+    .map((g, n) => ({ g, n }))
+    .filter(({ g }) => g.regime === S.regime && g.feature === S.col.feat && g.kind === S.col.kind);
+  const conflicting = gs.filter(({ g }) => disagree(g.y_min, g.y_max));
+  el("colSummary").textContent =
+    `${gs.length.toLocaleString()} groups · ${gs.reduce((a, { g }) => a + g.n, 0).toLocaleString()} compounds`
+    + ` · ${conflicting.length.toLocaleString()} with conflicting labels`;
+  gs.sort((a, b) => b.g.code_bits - a.g.code_bits);
+  const tbl = el("colTable");
+  tbl.innerHTML = "";
+  tbl.append(h("thead", {}, h("tr", {},
+    h("th", { class: "l" }, "members"), h("th", {}, "n"), h("th", {}, "label range"),
+    h("th", {}, "γ"), h("th", {}, "joint 𝓘"), h("th", {}, "Σ singles"),
+    h("th", {}, "redundancy"), h("th", {}, "data code (bits)"))));
+  const tb = h("tbody");
+  for (const { g, n } of gs.slice(0, 400)) {
+    const bad = disagree(g.y_min, g.y_max);
+    tb.append(h("tr", { class: n === S.col.group ? "on" : "",
+                        onclick: () => { S.col.group = n; drawCollisions(); } },
+      h("td", { class: "l name", title: g.members.map(j => T().ids[j]).join(", ") },
+        T().ids[g.members[0]] + (g.n > 1 ? ` +${g.n - 1}` : "")),
+      h("td", {}, String(g.n)),
+      h("td", { class: bad ? "conflict" : "" },
+        isBin() ? (g.y_min === g.y_max ? labelText(g.y_min) : "both")
+                : `${g.y_min.toFixed(2)} – ${g.y_max.toFixed(2)}`),
+      h("td", {}, fmt(g.dof)), h("td", {}, fmt(g.information)), h("td", {}, fmt(g.singles)),
+      h("td", {}, fmt(g.redundancy)), h("td", {}, fmt(g.code_bits))));
+  }
+  tbl.append(tb);
+
+  const sel = T().groups[S.col.group];
+  const mem = el("colMembers");
+  mem.innerHTML = "";
+  if (!sel || sel.feature !== S.col.feat || sel.kind !== S.col.kind || sel.regime !== S.regime) {
+    el("colTitle").textContent = "Select a group";
+    el("colNote").textContent = "";
+    return;
+  }
+  el("colTitle").textContent =
+    `${sel.n} compounds with ${sel.kind === "features" ? "the same " + sel.feature + " vector"
+                                                       : "the same constitution"}`;
+  const span = isBin()
+    ? (sel.y_min === sel.y_max ? `all ${labelText(sel.y_min)}` : "both labels")
+    : `labels spanning ${fmt(sel.y_max - sel.y_min)} ${T().unit} `
+      + `(${sel.y_min.toFixed(2)} to ${sel.y_max.toFixed(2)})`;
+  el("colNote").innerHTML =
+    `${span.charAt(0).toUpperCase() + span.slice(1)}. Scored jointly with `
+    + `<code>set_capacity</code> the group determines γ = <b>${fmt(sel.dof)}</b> effective `
+    + `parameters and stores <b>${fmt(sel.information)}</b> bits of information — the same `
+    + `compounds scored one at a time sum to ${fmt(sel.singles)} bits, a redundancy of `
+    + `${fmt(sel.redundancy)}× — and costs <b>${fmt(sel.code_bits)}</b> bits of data code.`;
+  for (const j of sel.members.slice(0, 60))
+    mem.append(h("figure", { style: "margin:0;cursor:pointer", onclick: () => select(j) },
+      structure(T().smiles[j], 150, 105),
+      h("figcaption", {}, T().ids[j].slice(0, 20), h("br"), labelText(T().y[j]))));
+  if (sel.members.length > 60)
+    mem.append(h("div", { class: "note" }, `… and ${sel.members.length - 60} more`));
+}
+
+/* ===================================================================== tables */
+
+function sortableTable(host, rows, cols, initial) {
+  let key = initial, dir = -1;
+  const render = () => {
+    const r = rows.slice().sort((a, b) => {
+      const x = a[key], y = b[key];
+      if (typeof x === "string") return dir * x.localeCompare(y);
+      return dir * ((x ?? -Infinity) - (y ?? -Infinity));
+    });
+    host.innerHTML = "";
+    host.append(h("thead", {}, h("tr", {}, ...cols.map(c =>
+      h("th", { class: "sortable" + (c.l ? " l" : ""), title: c.tip || "",
+                onclick: () => { if (key === c.k) dir = -dir; else { key = c.k; dir = -1; } render(); } },
+        c.lab + (key === c.k ? (dir < 0 ? " ▾" : " ▴") : ""))))));
+    const tb = h("tbody");
+    for (const row of r)
+      tb.append(h("tr", {}, ...cols.map(c => h("td", { class: c.l ? "l" : "" },
+        c.fmt ? c.fmt(row[c.k], row) : fmt(row[c.k])))));
+    host.append(tb);
+  };
+  render();
+}
+
+function drawModels() {
+  const str = v => String(v);
+  sortableTable(el("modelTable"), D.model_table, [
+    { k: "task", lab: "task", l: true, fmt: str }, { k: "feature", lab: "features", l: true, fmt: str },
+    { k: "regime", lab: "regime", l: true, fmt: str }, { k: "epochs", lab: "epochs", fmt: str },
+    { k: "n_params", lab: "parameters", fmt: v => v.toLocaleString() },
+    { k: "train_metric", lab: "train", fmt: v => v.toFixed(3) },
+    { k: "test_metric", lab: "test", fmt: v => v.toFixed(3) },
+    { k: "gamma", lab: "γ", tip: "effective parameters", fmt: v => v.toFixed(0) },
+    { k: "description_bits_per_compound", lab: "bits/cpd", tip: "two-part description length",
+      fmt: v => v.toFixed(2) },
+    { k: "info_total", lab: "Σ𝓘", tip: "total information over training compounds", fmt: v => v.toFixed(0) },
+    { k: "retrain_mem_total", lab: "Σ retrain", tip: "total memorization measured by retraining",
+      fmt: v => v.toLocaleString(undefined, { maximumFractionDigits: 0 }) },
+    { k: "rho_info_vs_retrain", lab: "ρ 𝓘", tip: "Spearman, information vs retraining memorization",
+      fmt: v => v.toFixed(2) },
+    { k: "rho_network_mem_vs_retrain", lab: "ρ one-step",
+      tip: "Spearman for the unrefit one-step estimate", fmt: v => v.toFixed(2) },
+    { k: "rho_testvol_vs_error", lab: "ρ volume", tip: "Spearman, test volume vs test error",
+      fmt: v => v.toFixed(2) },
+  ], "gamma");
+  sortableTable(el("colSummaryTable"), D.collisions, [
+    { k: "task", lab: "task", l: true, fmt: String }, { k: "feature", lab: "features", l: true, fmt: String },
+    { k: "groups", lab: "groups", fmt: v => v.toLocaleString() },
+    { k: "compounds", lab: "compounds", fmt: v => v.toLocaleString() },
+    { k: "conflicting_groups", lab: "conflicting", fmt: v => v.toLocaleString() },
+    { k: "conflicting_compounds", lab: "cpds", fmt: v => v.toLocaleString() },
+    { k: "conflicting_code_bits", lab: "their data code", fmt: v => fmt(v) },
+    { k: "conflicting_code_share", lab: "share of code",
+      fmt: v => (100 * v).toFixed(1) + "%" },
+    { k: "largest_n", lab: "largest group", fmt: String },
+    { k: "largest_span", lab: "its label span", fmt: v => fmt(v) },
+    { k: "largest_info", lab: "its 𝓘", fmt: v => fmt(v) },
+  ], "compounds");
+}
+
+/* ====================================================================== about */
+
+const ABOUT = `
+<h2>What this dashboard shows</h2>
+<p>Dropout MLPs were trained on three <a href="https://tdcommons.ai">Therapeutics Data
+Commons</a> ADMET benchmark tasks with three molecular featurizations, in two training regimes.
+<code>capfid</code> then computed the exact linearized-Laplace (generalized Gauss–Newton)
+posterior of each network through its empirical neural tangent kernel, and attributed that
+posterior to individual training compounds. This page is the per-compound view of that
+analysis: everything in it is read from the tables under
+<code>examples/tdc_casestudy/results/</code> and <code>cache/capfid/</code>.</p>
+
+<h3>Per-compound quantities</h3>
+<table>
+<tr><th class="l">quantity</th><th class="l">meaning</th></tr>
+<tr><td class="l">effective parameters γ</td><td class="l">the share of the posterior's effective
+dimension that this compound determines. Summed over the training set it gives the model's γ.</td></tr>
+<tr><td class="l">volume</td><td class="l">½ log₂ det of the posterior contraction this compound
+causes — how much of the weight space its presence rules out. It needs no label, so it is also
+defined for test compounds, where it is <em>prospective</em>: how much a model would learn from
+being told this compound's label.</td></tr>
+<tr><td class="l">information 𝓘</td><td class="l">the KL divergence between the posterior and the
+posterior that would be obtained without this compound: the bits of the fitted model that are
+<em>about</em> this label.</td></tr>
+<tr><td class="l">memorization</td><td class="l">log₂ p(y | model) − log₂ p(y | model refit without
+it): how much better the model predicts this compound's own label because it trained on it.</td></tr>
+<tr><td class="l">memorization by retraining</td><td class="l">the same idea measured the expensive
+way (Feldman &amp; Zhang 2020): 48 networks retrained on random 70% subsets, mean log-likelihood
+of this compound under the models that saw it minus the models that did not. It is the external
+yardstick capfid is checked against, not a capfid output.</td></tr>
+<tr><td class="l">data code length</td><td class="l">−log₂ p(y | refit posterior mean): the bits
+this label costs in the two-part code. Large values mark labels the model simply does not fit.</td></tr>
+<tr><td class="l">held-out GP mean</td><td class="l">what the refit posterior predicts for this
+compound when it is left out (exact leave-one-out for the Gaussian likelihood). Comparing it with
+the in-sample prediction is memorization made visible.</td></tr>
+</table>
+
+<h3>Reading the maps</h3>
+<p>Each panel is a UMAP of every compound in that feature space (Jaccard for the two fingerprints,
+Euclidean for CheMeleon), so the three panels place the same compounds differently — that is the
+point. Grey points are compounds of the splits not currently shown. The circled numbers are the
+key compounds of Figures 5–7 of the manuscript, chosen by fixed rules on the information the
+models store.</p>
+
+<h3>Caveats</h3>
+<ul>
+<li>All numbers are for <b>seed 0</b> of each configuration, and the posterior is refit
+(<code>prior_mean=</code>) because these networks are trained with dropout and early stopping and
+so are not at a mode of the loss.</li>
+<li>capfid's totals are much smaller than the networks' own memorization, and compare models only
+within a training regime: the posterior conditions on the trained network's tangent features, so
+label information already written into those features is not counted again.</li>
+<li>Scores are rounded to three significant digits and values below 10⁻⁷ bits are stored as
+zero, to keep this page small enough to open from a file. Rank correlations computed here can
+therefore differ from the published ones in the last reported digit.</li>
+<li>Structures are drawn in your browser by <a href="https://github.com/rdkit/rdkit-js">RDKit.js</a>,
+fetched from a CDN the first time you open the page. Offline, SMILES strings are shown instead.</li>
+</ul>
+
+<h3>Source</h3>
+<p>Built __BUILT__ from <code>examples/tdc_casestudy/dashboard.py</code> in
+<a href="https://github.com/maomlab/capfid">github.com/maomlab/capfid</a>. The methods are
+described in <i>Capacity and fidelity: a per-example decomposition of what a model learns</i>.
+Regenerate with <code>python examples/tdc_casestudy/dashboard.py</code>.</p>
+`;
+
+/* ======================================================================== ui */
+
+/** Push S.cmp back into the Compare menus and redraw. */
+function syncCompare() {
+  el("cmpX").value = S.cmp.x; el("cmpY").value = S.cmp.y;
+  el("cmpXF").value = S.cmp.xm; el("cmpYF").value = S.cmp.ym;
+  seg(el("cmpSplit"), [["train", "train"], ["test", "test"]], () => S.cmp.split,
+      v => { S.cmp.split = v; drawCompare(); });
+  drawCompare();
+}
+
+function showTab(name) {
+  S.tab = name;
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.dataset.tab === name));
+  document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("on", b.dataset.v === name));
+  el("app").classList.toggle("wide", name === "models" || name === "about");
+  if (name === "map") { drawMaps(); drawRank(); }
+  if (name === "compare") { cmpPlot.resize(); syncCompare(); }
+  if (name === "collisions") drawCollisions();
+}
+
+function seg(host, items, get, set) {
+  host.innerHTML = "";
+  for (const [v, lab] of items)
+    host.append(h("button", { "data-v": v, class: get() === v ? "on" : "",
+      onclick: () => { set(v); seg(host, items, get, set); } }, lab));
+}
+
+function refreshTask() {
+  const t = T();
+  const ys = [];
+  for (let i = 0; i < t.n; i++) ys.push(t.y[i]);
+  ys.sort((a, b) => a - b);
+  t._ylo = ys[Math.floor(0.02 * ys.length)]; t._yhi = ys[Math.floor(0.98 * ys.length)];
+  S.sel = -1;
+  S.col.group = -1;
+  if (!t.groups.some(g => g.feature === S.col.feat)) S.col.feat = D.features[0];
+  for (const f of D.features) if (maps[f]) { maps[f].tx = { k: 1, dx: 0, dy: 0 }; }
+  drawDetail();
+  showTab(S.tab);
+}
+
+function boot(data) {
+  D = data;
+  for (const m of METRICS) if (D.domain[m.k]) m.dom = D.domain[m.k];
+  el("boot").hidden = true; el("ui").hidden = false;
+
+  el("selTask").append(...Object.keys(D.tasks).map(k => opt(k, `${k} · ${D.tasks[k].metric}`)));
+  el("selTask").value = S.task;
+  el("selTask").onchange = e => { S.task = e.target.value; refreshTask(); };
+
+  seg(el("segRegime"), [["early", "early stopping"], ["long", "100 epochs"]], () => S.regime,
+      v => {
+        const same = S.cmp.xm.split("|")[1] === S.cmp.ym.split("|")[1];
+        S.regime = v;
+        if (same) {                  // leave an explicit early-versus-long comparison alone
+          S.cmp.xm = S.cmp.xm.split("|")[0] + "|" + v;
+          S.cmp.ym = S.cmp.ym.split("|")[0] + "|" + v;
+        }
+        drawDetail(); showTab(S.tab);
+      });
+
+  el("tabs").append(...[["map", "Map"], ["compare", "Compare"], ["collisions", "Collisions"],
+                        ["models", "Models"], ["about", "About"]]
+    .map(([v, lab]) => h("button", { "data-v": v, onclick: () => showTab(v) }, lab)));
+
+  const sel = el("selMetric");
+  sel.append(...METRICS.map(m => opt(m.k, m.lab)));
+  const scaleSeg = () => seg(el("segScale"), [["log", "log"], ["linear", "linear"]],
+    () => S.scale, v => { S.scale = v; drawMaps(); });
+  /** Keep the three menus consistent: a train-only quantity cannot be shown for the test
+   *  split, and only non-negative quantities get a log scale. */
+  const syncMap = () => {
+    const m = MET[S.metric];
+    if (S.split === "test" && m.dom === "train") S.metric = "volume";
+    if (!MET[S.metric].log) S.scale = "linear";
+    sel.value = S.metric;
+    scaleSeg();
+    drawMaps(); drawRank();
+  };
+  // changing the quantity resets the axis to its natural scale; the toggle then overrides
+  sel.onchange = e => {
+    S.metric = e.target.value;
+    S.scale = MET[S.metric].log ? "log" : "linear";
+    syncMap();
+  };
+  scaleSeg();
+  seg(el("segSplit"), [["train", "train"], ["test", "test"]], () => S.split,
+      v => { S.split = v; syncMap(); });
+  el("search").oninput = drawRank;
+  el("onlyConflict").onchange = drawRank;
+
+  const models = D.features.flatMap(f => D.regimes.map(r => f + "|" + r));
+  for (const [id, key] of [["cmpX", "x"], ["cmpY", "y"]]) {
+    const s = el(id);
+    s.append(...METRICS.map(m => opt(m.k, m.lab)));
+    s.onchange = e => { S.cmp[key] = e.target.value; drawCompare(); };
+  }
+  for (const [id, key] of [["cmpXF", "xm"], ["cmpYF", "ym"]]) {
+    const s = el(id);
+    s.append(...models.map(k => opt(k, modelLabel(k))));
+    s.onchange = e => { S.cmp[key] = e.target.value; drawCompare(); };
+  }
+  el("presets").append(...PRESETS.map(([lab, p]) => h("button", { onclick: () => applyPreset(p) },
+                                                      lab)));
+
+  el("colFeat").append(...D.features.map(f => opt(f)));
+  el("colFeat").value = S.col.feat;
+  el("colFeat").onchange = e => { S.col.feat = e.target.value; S.col.group = -1; drawCollisions(); };
+  seg(el("colKind"), [["features", "identical feature vector"], ["skeleton", "same constitution"]],
+      () => S.col.kind, v => { S.col.kind = v; S.col.group = -1; drawCollisions(); });
+
+  el("aboutBody").innerHTML = ABOUT;
+
+  buildMaps();
+  buildCompare();
+  drawModels();
+  refreshTask();
+}
+
+/* ====================================================================== start */
+
+(async function () {
+  try {
+    const data = await unpack(PAYLOAD);
+    // RDKit.js is optional: start without it and redraw once (if) it arrives
+    if (window.initRDKitModule) {
+      window.initRDKitModule().then(m => { RDKit = m; svgCache.clear(); drawDetail();
+        if (S.tab === "collisions") drawCollisions(); })
+        .catch(() => { RDKit = null; });
+    }
+    boot(data);
+  } catch (e) {
+    el("boot").innerHTML = "<b>Could not load the case-study data.</b><br>"
+      + String(e && e.message || e);
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>
