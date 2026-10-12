@@ -24,6 +24,8 @@
   {\small $^{2}$Department of Medicinal Chemistry, University of Michigan, Ann Arbor, MI, USA}\\
   {\small \href{mailto:maom@umich.edu}{\texttt{maom@umich.edu}}}}
 \newcommand{\coderepo}{\url{https://github.com/maomlab/capfid}}
+% \urldef reads the URL verbatim, so the underscore needs no escaping
+\urldef{\dashboardurl}\url{https://maomlab.github.io/capfid/examples/tdc_casestudy/dashboard.html}
 % -------------------------------------------------------------------------------
 
 \setlist{nosep,leftmargin=*}
@@ -409,6 +411,8 @@ AqSol & ECFP4 & 285 & 736 & 81 & 292 & 1.18 / 0.57\\
 \subsection{Summary}
 Across three ADMET tasks, capacity located (i) compounds whose labels contradict their nearest neighbors and well-established structural alerts, including likely errors (AMES); (ii) a physical mechanism, ionization, that the representations do not encode (Lipophilicity); (iii) gross label errors and chemical classes outside the representations' scope (AqSolDB); and (iv) collisions where a representation maps compounds with very different labels to the same vector. It ranked compounds by how strongly networks memorize them, as measured by 864 retrainings, from a single posterior per network, and it showed that networks trained past early stopping memorize far more than a calibrated posterior needs without generalizing better.
 
+An interactive version of these per-compound results ships with the code (see Code availability): it colors each dataset's UMAP embeddings by any of the quantities above, in either training regime, depicts a compound with every model's scores and its nearest neighbors' labels when clicked, and draws the members of each collision group.
+
 \section{Discussion and limitations}
 \paragraph{A taxonomy.} The capacity--fidelity plane separates (i) \emph{typical} examples (low capacity, high fidelity, held-out $\approx$ fidelity), (ii) \emph{memorized} examples (high capacity, high fidelity, low held-out fidelity), (iii) \emph{ignored} examples (modest capacity, low fidelity), and (iv) \emph{atypical but correct} examples (elevated capacity, high fidelity), the long tail that memorization may legitimately serve \citep{feldman2020}. The prior precision moves examples between (iii) and (ii), and the evidence offers a principled stopping point.
 
@@ -433,7 +437,7 @@ Capacity is the cost side of a per-example ledger. Value-of-information analyses
 \ifanonymous
 The implementation, unit tests, and scripts that regenerate every figure and table are provided as anonymized supplementary material and will be released publicly upon publication.
 \else
-The method is implemented in \texttt{capfid}, an MIT-licensed PyTorch package available at \coderepo. The repository includes unit tests that check \cref{prop:reduction,prop:bayes,prop:submod} and \cref{cor:mi} against brute-force refits and the output-space computation against the parameter-space one, the script \texttt{examples/paper/reproduce\_paper.py}, which regenerates \cref{tab:exact,tab:moons,tab:sets} and \cref{fig:moons,fig:vit,fig:val}, and \texttt{examples/tdc\_casestudy/}, which regenerates the case study (\cref{tab:tdc,tab:collisions}, \cref{fig:tdc-val,fig:tdc-ames,fig:tdc-lipo,fig:tdc-aqsol,fig:tdc-gen}).
+The method is implemented in \texttt{capfid}, an MIT-licensed PyTorch package available at \coderepo. The repository includes unit tests that check \cref{prop:reduction,prop:bayes,prop:submod} and \cref{cor:mi} against brute-force refits and the output-space computation against the parameter-space one, the script \texttt{examples/paper/reproduce\_paper.py}, which regenerates \cref{tab:exact,tab:moons,tab:sets} and \cref{fig:moons,fig:vit,fig:val}, and \texttt{examples/tdc\_casestudy/}, which regenerates the case study (\cref{tab:tdc,tab:collisions}, \cref{fig:tdc-val,fig:tdc-ames,fig:tdc-lipo,fig:tdc-aqsol,fig:tdc-gen}). The case study's per-compound results are also published as a self-contained interactive dashboard at \dashboardurl, rebuilt from the same cached tables by \texttt{examples/tdc\_casestudy/dashboard.py}.
 \fi
 
 \begingroup
