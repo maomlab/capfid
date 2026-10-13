@@ -336,7 +336,8 @@ def fig_task(task, keys, out, regime="early"):
 def fig_validation(out):
     """capfid estimates versus memorization measured by retraining, for every task (rows),
     with the refit posterior in both training regimes and the unrefit one-step estimate."""
-    fig, axes = plt.subplots(3, 3, figsize=(7.0, 6.3))
+    # one y scale everywhere and one x scale per column, so panels are directly comparable
+    fig, axes = plt.subplots(3, 3, figsize=(7.0, 6.3), sharey=True, sharex="col")
     cols = [("information_bits", "early", "refit $\\mathcal{I}$, early stopping"),
             ("information_bits", "long", "refit $\\mathcal{I}$, 100 epochs"),
             ("network_memorization_bits", "long", "one-step memorization from $\\theta^*$, 100 epochs")]
@@ -358,7 +359,6 @@ def fig_validation(out):
                         mec="white", mew=0.3, label=f"{f} ρ={rho:.2f}")
             if one_step:                      # can be negative away from a stationary point
                 ax.set_xscale("symlog", linthresh=0.01)
-                ax.set_xticks([t for t in (0, 0.01, 1, 100) if t <= ax.get_xlim()[1]])
                 ax.axvline(0, color="0.6", lw=0.5)
             else:
                 ax.set_xscale("log")
@@ -374,6 +374,9 @@ def fig_validation(out):
                 ax.set_xlabel("capfid estimate (bits)")
             if j == 0:
                 ax.set_ylabel(f"{TASKS[t]['short']}: retraining\nmemorization (bits)")
+    # the symlog ticks need the column's final shared limits, so place them last
+    ax = axes[2, 2]
+    ax.set_xticks([v for v in (0, 0.01, 1, 100) if v <= ax.get_xlim()[1]])
     fig.tight_layout()
     fig.savefig(out, dpi=300, bbox_inches="tight")
     plt.close(fig)
