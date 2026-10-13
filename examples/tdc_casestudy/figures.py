@@ -362,9 +362,11 @@ def fig_validation(out):
                 ax.axvline(0, color="0.6", lw=0.5)
             else:
                 ax.set_xscale("log")
+                # one tick per decade, so the 1e-4 clipping floor is always labeled
+                ax.xaxis.set_major_locator(matplotlib.ticker.LogLocator(numticks=10))
             ax.set_yscale("symlog", linthresh=0.1)
             ax.axhline(0, color="0.6", lw=0.5)
-            ax.legend(loc="upper left", handlelength=1.2, handletextpad=0.3, frameon=True,
+            ax.legend(loc="lower right", handlelength=1.2, handletextpad=0.3, frameon=True,
                       framealpha=0.85, edgecolor="none", fontsize=6)
             if i == 0:
                 ax.set_title(title)
