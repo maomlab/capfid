@@ -34,8 +34,7 @@
 \newtheorem{corollary}{Corollary}
 \theoremstyle{definition}
 \newtheorem{definition}{Definition}
-\theoremstyle{remark}
-\newtheorem{remark}{Remark}
+\newtheorem{remark}{Remark}   % same style as Definition, so Remark 1 is easy to find
 
 \newcommand{\KL}{\mathrm{KL}}
 \newcommand{\tr}{\operatorname{tr}}
@@ -69,7 +68,7 @@ Two families of tools approximate pieces of this picture. Influence functions es
 \paragraph{Contributions.}
 \begin{itemize}
 \item We define three nested per-example (and per-set) capacity measures by Laplace unlearning: effective degrees of freedom, volume (entropy drop), and information (KL), and show they reduce exactly to $C\times C$ output-space quantities (\cref{prop:reduction}).
-\item We prove or collect identities that give them meaning: information equals the generalization gap under exact Bayesian updating (\cref{prop:bayes}); volume equals the weight--label mutual information for Gaussian likelihoods and the leverage formula $-\tfrac12\log(1-h_{ii})$ in linear regression; per-example degrees of freedom sum to MacKay's effective number of parameters; and volume is submodular, giving a redundancy ratio $\ge 1$ for sets and an upper bound on the fraction of model information attributable to single examples (\cref{prop:submod}).
+\item We prove or collect identities that give them meaning: information equals the generalization gap under exact Bayesian updating (\cref{prop:bayes}); volume equals the weight--label mutual information for Gaussian likelihoods and the leverage formula $-\tfrac12\log(1-h_{ii})$ in linear regression; degrees of freedom is exactly additive, so per-example values sum to MacKay's effective number of parameters $\gamma$ (\cref{rem:totals}); and volume is submodular, giving a redundancy ratio $\ge 1$ for sets and an upper bound on the fraction of model information attributable to single examples (\cref{prop:submod}).
 \item We connect the totals to a Laplace two-part MDL code (\cref{sec:mdl}) and demonstrate the diagnostic on an exactly solvable model, an MLP under a prior-precision sweep, and a small vision transformer, validating against warm-started retraining and documenting where the approximation fails.
 \item We compute the same posterior in output space through the empirical neural tangent kernel, at a cost independent of the number of parameters, and refit its mean for networks that are not at a stationary point, such as those trained with dropout or early stopping (\cref{sec:kernel}). This makes the analysis practical for networks with millions of parameters and a few thousand training examples, which we use for a case study of molecular property prediction (\cref{sec:tdc}).
 \end{itemize}
@@ -117,6 +116,20 @@ with $h$ the differential entropy. We report $\Vol$ and $\Inf$ in bits.
 \end{definition}
 $\Vol$ is the log-ratio of weight-space volumes the examples pin down; it depends on the inputs and on the rest of the data, but not on the labels $y_S$ except through $\Lambda_S$. $\Inf$ adds a mean-shift term and measures what is actually stored about the labeled examples. Unlike an absolute differential entropy, $\Vol$ is invariant to affine reparameterizations of $\theta$ (and, within the Laplace approximation, to any smooth reparameterization, which is linearized at $\theta^*$ so that the Jacobian terms cancel); $\Inf$ is invariant to any bijection.
 
+\begin{remark}[The three totals, and $\gamma$]\label{rem:totals}
+Unlearning all of $\D$ returns the prior ($A_{-\D}=\alpha I$, and $\theta^*_{-\D}=0$ because $\nabla L(\theta^*)=0$), so evaluating \cref{def:capacity} at $S=\D$ gives the three model-level totals:
+\begin{equation}
+\dof(\D)=\gamma,\quad \Vol(\D)=\Vol_{\mathrm{tot}},\quad \Inf(\D)=\KL(q_\D\|\mathrm{prior}),
+\label{eq:totals}
+\end{equation}
+where $\gamma=\tr(\Sigma\,\mathrm{GGN})=P-\alpha\tr\Sigma$ is MacKay's effective number of parameters \citep{mackay1992} and $\Vol_{\mathrm{tot}}=\tfrac12\logdet(I+\mathrm{GGN}/\alpha)$ is the bits by which the data shrink the weight space. Every $\gamma$ in this paper is this total. Because it is a trace, $\dof$ is the only one of the three that is exactly additive,
+\begin{equation}
+\dof(S)=\textstyle\sum_{i\in S}\dof(\{i\}),\qquad \textstyle\sum_{i=1}^N\dof(\{i\})=\gamma,
+\label{eq:dof-additive}
+\end{equation}
+so $\dof(\{i\})$ is example $i$'s exact share of the model's effective parameters. $\Vol$ is superadditive instead (\cref{prop:submod}), and $\Inf$ is not additive either, which is why sets need their own scores.
+\end{remark}
+
 \begin{definition}[Fidelity]
 The fidelity of example $i$ is $F_i=\log_2 p(y_i\mid x_i,\theta^*)$ and its held-out fidelity is $F_i^{-}=\log_2 p(y_i\mid x_i,\theta^*_{-i})$, using the linearized held-out logits of \cref{prop:reduction}. Posterior-averaged versions are $\bar F_i=\mathbb{E}_{q_\D}\log_2 p(y_i\mid\theta)$ and $\tilde F^{-}_i=\log_2\mathbb{E}_{q_{\Di}}p(y_i\mid\theta)$.
 \end{definition}
@@ -144,15 +157,13 @@ For a Gaussian likelihood, $\Sigma$ does not depend on $y$, and $\mathbb{E}_{y_S
 \end{corollary}
 So $\Vol$ is the \emph{capacity allotted} to an input location (the expected information about any plausible label), while $\Inf$ is the information spent on the observed label. Expanding in the eigenvalues $\kappa$ of $K_S$: $\Vol\approx\tfrac12\sum\kappa$, whereas the covariance part of $\Inf$ is $\tfrac12\sum[-\kappa-\log(1-\kappa)]\approx\tfrac14\sum\kappa^2$. For well-fit examples (small $r$), $\Inf\approx\Vol^2$ in nats: they occupy volume but store little. Examples with surprising labels add the mean-shift term and can have $\Inf>\Vol$.
 
-\paragraph{Degrees of freedom.} Summed over single examples, $\sum_i\dof(\{i\})=\tr(\Sigma\,\mathrm{GGN})=P-\alpha\tr\Sigma=\gamma$, MacKay's effective number of parameters. Thus $\dof(\{i\})$ is example $i$'s share of the model's capacity in parameter units.
-
 \begin{proposition}[Redundancy]\label{prop:submod}
 For every $S$, $\Vol(S)\ge\sum_{i\in S}\Vol(\{i\})$, and the total model information $\Vol_{\mathrm{tot}}=h(\text{prior})-h(q_\D)=\tfrac12\logdet(I+\mathrm{GGN}/\alpha)$ satisfies $\sum_{i=1}^N\Vol(\{i\})\le\Vol_{\mathrm{tot}}$.
 \end{proposition}
 This follows from submodularity of $T\mapsto\logdet(\alpha I+\sum_{i\in T}J_i\T\Lambda_iJ_i)$ \citep{krause2008}. We report the \emph{redundancy ratio} $\rho(S)=\Vol(S)/\sum_{i\in S}\Vol(\{i\})\ge1$, which is large when members of $S$ encode the same information, and the \emph{unique fraction} $u=\sum_i\Vol(\{i\})/\Vol_{\mathrm{tot}}\le1$.
 
 \subsection{Totals as a two-part code}\label{sec:mdl}
-The Laplace log evidence decomposes as $-\log p(\D)\approx L_{\text{data}}+L_{\text{model}}$ with $L_{\text{data}}=-\sum_i\log p(y_i\mid x_i,\theta^*)$ and $L_{\text{model}}=\tfrac{\alpha}{2}\|\theta^*\|^2+\Vol_{\mathrm{tot}}$. Moreover $\KL(q_\D\|\text{prior})=L_{\text{model}}-\gamma/2$. Varying $\alpha$ moves along a compression/fidelity curve, and the evidence selects a point on it.
+The Laplace log evidence decomposes as $-\log p(\D)\approx L_{\text{data}}+L_{\text{model}}$ with $L_{\text{data}}=-\sum_i\log p(y_i\mid x_i,\theta^*)$ and $L_{\text{model}}=\tfrac{\alpha}{2}\|\theta^*\|^2+\Vol_{\mathrm{tot}}$. Moreover the total information of \cref{rem:totals} is $\Inf(\D)=\KL(q_\D\|\text{prior})=L_{\text{model}}-\gamma/2$. Varying $\alpha$ moves along a compression/fidelity curve, and the evidence selects a point on it.
 
 \subsection{Computation}\label{sec:compute}
 \begin{algorithm}[t]
@@ -200,7 +211,7 @@ held-out log-lik vs.\ exact refit & $2.8\times10^{-14}$\\
 $\Inf$ vs.\ train $-$ held-out (\cref{prop:bayes}) & $9.6\times10^{-15}$\\
 $\Vol$ vs.\ $-\frac12\log_2(1-h_{ii})$ (\cref{cor:mi}) & $3.9\times10^{-16}$\\
 \midrule
-$\sum_i\dof(\{i\})$ vs.\ $\tr H$ & 9.091 vs.\ 9.091\\
+$\gamma=\sum_i\dof(\{i\})$ vs.\ $\tr H$ & 9.091 vs.\ 9.091\\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -218,7 +229,7 @@ We trained a 2--32--32--2 tanh MLP ($P=1218$) on 300 two-moons points with 32 fl
 \begin{table}[t]
 \centering\small
 \setlength{\tabcolsep}{2.6pt}
-\caption{Two-moons prior-precision sweep. $L$ values in bits; $\tilde\Inf$ is the median of $\Inf(\{i\})$ (bits); $u$ is the unique fraction (\cref{prop:submod}).}\label{tab:moons}
+\caption{Two-moons prior-precision sweep. $\gamma=\dof(\D)$ and $\Vol_{\mathrm{tot}}=\Vol(\D)$ are the totals of \cref{rem:totals}; $L$ values in bits; $\tilde\Inf$ is the median of $\Inf(\{i\})$ (bits); $u$ is the unique fraction (\cref{prop:submod}).}\label{tab:moons}
 \begin{tabular}{@{}lrrrrrcrrr@{}}
 \toprule
 $\alpha$ & $\gamma$ & $\Vol_{\mathrm{tot}}$ & $L_{\text{model}}$ & $L_{\text{data}}$ & total & flips fit & $\tilde\Inf_{\text{flip}}$ & $\tilde\Inf_{\text{clean}}$ & $u$\\
@@ -298,7 +309,7 @@ Molecular property data sets are small, assembled from assays with limited repro
 \begin{table*}[t]
 \centering\small
 \setlength{\tabcolsep}{4.2pt}
-\caption{\textbf{Case-study models.} Test metric: AUROC for AMES (higher is better), MAE in log units otherwise, for the network (mean of three seeds) and for the refit posterior mean (seed 0). $\gamma$: effective parameters. $L/N$: Laplace two-part code length per training compound in bits (continuous for regression, so comparable only within a task). Memorization: totals over training compounds of capfid's information $\Inf(\{i\})$ and of memorization measured by retraining. Spearman $\rho$: per-compound memorization by retraining against $\Inf(\{i\})$ of the refit posterior (refit) or against one-step memorization $F_i-F_i^{-}$ from $\theta^*$ (one step); and $\Inf(\{i\})$ for two training seeds (seeds).}\label{tab:tdc}
+\caption{\textbf{Case-study models.} Test metric: AUROC for AMES (higher is better), MAE in log units otherwise, for the network (mean of three seeds) and for the refit posterior mean (seed 0). $\gamma=\dof(\D)$: effective parameters (\cref{rem:totals}). $L/N$: Laplace two-part code length per training compound in bits (continuous for regression, so comparable only within a task). Memorization: totals over training compounds of capfid's information $\Inf(\{i\})$ and of memorization measured by retraining. Spearman $\rho$: per-compound memorization by retraining against $\Inf(\{i\})$ of the refit posterior (refit) or against one-step memorization $F_i-F_i^{-}$ from $\theta^*$ (one step); and $\Inf(\{i\})$ for two training seeds (seeds).}\label{tab:tdc}
 \begin{tabular}{@{}lllrrrrrrrrrr@{}}
 \toprule
  & & & & \multicolumn{2}{c}{test metric} & & & \multicolumn{2}{c}{memorization (bits)} & \multicolumn{3}{c}{Spearman $\rho$}\\
@@ -735,7 +746,7 @@ Picture $q_\D$ as an ellipsoidal cloud of the weight vectors that remain plausib
 \begin{figure*}[t]
 \centering
 \includegraphics[width=0.94\textwidth]{figures/fig11_tutorial_fourier.png}
-\caption{\textbf{The three capacities across the experiment of \cref{sec:exact}}: $N=200$ noisy samples of $\sin2x$ fitted with $P=40$ random Fourier features, five of whose targets are shifted by $+2$ (red). \textbf{(a)} The fit, with a $2\sigma$ posterior band. \textbf{(b)} Degrees of freedom $\dof(\{i\})=h_i$, a function of $x$ alone, summing to $\gamma=9.091$ of the 40 nominal parameters. \textbf{(c)} $\Vol$ (line) and $\Inf$ (points) against $x$: volume is label-free and smooth, while information varies over three decades at the same input according to the residual. \textbf{(d)} The capacity plane, coloured by $|e_i|/\sigma$. The dash-dotted line $\Inf=\Vol^2$ (in nats) is the floor reached only by a perfectly fit example; the outliers sit two decades above it at ordinary volume.}
+\caption{\textbf{The three capacities across the experiment of \cref{sec:exact}}: $N=200$ noisy samples of $\sin2x$ fitted with $P=40$ random Fourier features, five of whose targets are shifted by $+2$ (red). \textbf{(a)} The fit, with a $2\sigma$ posterior band. \textbf{(b)} Degrees of freedom $\dof(\{i\})=h_i$, a function of $x$ alone, summing to $\gamma=\dof(\D)=9.091$ of the 40 nominal parameters (\cref{rem:totals}). \textbf{(c)} $\Vol$ (line) and $\Inf$ (points) against $x$: volume is label-free and smooth, while information varies over three decades at the same input according to the residual. \textbf{(d)} The capacity plane, coloured by $|e_i|/\sigma$. The dash-dotted line $\Inf=\Vol^2$ (in nats) is the floor reached only by a perfectly fit example; the outliers sit two decades above it at ordinary volume.}
 \label{fig:tut-fourier}
 \end{figure*}
 
@@ -758,7 +769,7 @@ Two classical identities fall out of the same algebra, both exact here:
 y_i-f(x_i;\hat w_{-i})&=\frac{e_i}{1-h_i},\qquad e_i=y_i-\hat f_i,\label{eq:tut-press}\\
 \textstyle\sum_i h_i&=\tr H=\gamma.\label{eq:tut-gamma}
 \end{align}
-\Cref{eq:tut-press} is the PRESS formula: what the model would have predicted had it never seen example $i$ costs nothing beyond knowing $h_i$. \Cref{eq:tut-gamma} says the leverages are shares of a budget --- the effective number of parameters --- which runs from $0$ under a strong prior to $\min(N,P)$ under a flat one.
+\Cref{eq:tut-press} is the PRESS formula: what the model would have predicted had it never seen example $i$ costs nothing beyond knowing $h_i$. \Cref{eq:tut-gamma} is the additivity of \cref{rem:totals} in this special case: the leverages are exact shares of a budget, the effective number of parameters $\gamma=\dof(\D)$, which runs from $0$ under a strong prior to $\min(N,P)$ under a flat one.
 
 \subsection{The three capacities}
 Putting $C=1$, $J_i=\phi_i\T$, $\Lambda_i=\sigma^{-2}$ and $r_i=-e_i/\sigma^2$ into \cref{prop:reduction} gives, for a single example,
@@ -769,7 +780,7 @@ Putting $C=1$, $J_i=\phi_i\T$, $\Lambda_i=\sigma^{-2}$ and $r_i=-e_i/\sigma^2$ i
 \end{align}
 Everything an example costs this model is therefore a function of just two numbers: where it sits, through $h_i$, and how wrong the fit is there, through $e_i$ (\cref{fig:tut-formulas}).
 
-\paragraph{Degrees of freedom} is the leverage itself, measured in parameters rather than bits. By \cref{eq:tut-gamma} it is example $i$'s share of the $\gamma$ parameters the data actually determine, which is why the per-example values sum to a model-level quantity.
+\paragraph{Degrees of freedom} is the leverage itself, measured in parameters rather than bits. By \cref{eq:tut-gamma} it is example $i$'s exact share of the $\gamma$ parameters the data determine.
 
 \paragraph{Volume} is measured in bits. Unlearning example $i$ is a rank-one change to the precision, so the cloud grows in exactly one direction --- by the factor $(1-h_i)^{-1/2}$ --- and is unchanged in the $P-1$ directions conjugate to $\phi_i$. The ellipsoid's volume therefore grows by that same factor, and $\Vol(\{i\})$ is its base-2 logarithm (\cref{fig:tut-unlearn}b). One bit of volume means the example halves the set of weight vectors that remain plausible. Note what is \emph{not} in \cref{eq:tut-vol}: the label. Volume is settled by where an example sits in feature space, before anyone reads $y_i$. \Cref{cor:mi} says what it then is --- the information the model would gain from \emph{any} plausible label at that location, averaged over them --- which is why we call it the capacity allotted to an input rather than the capacity used.
 
