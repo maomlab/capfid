@@ -67,7 +67,7 @@ Two families of tools approximate pieces of this picture. Influence functions es
 
 \paragraph{Contributions.}
 \begin{itemize}
-\item We define three nested per-example (and per-set) capacity measures by Laplace unlearning: effective degrees of freedom, volume (entropy drop), and information (KL), and show they reduce exactly to $C\times C$ output-space quantities (\cref{prop:reduction}).
+\item We define three nested per-example (and per-set) capacity measures by Laplace unlearning: effective degrees of freedom, volume (entropy drop), and information (KL), and show they reduce exactly to $C\times C$ output-space quantities, where $C$ is the number of outputs of the network (\cref{prop:reduction}).
 \item We prove or collect identities that give them meaning: information equals the generalization gap under exact Bayesian updating (\cref{prop:bayes}); volume equals the weight--label mutual information for Gaussian likelihoods and the leverage formula $-\tfrac12\log(1-h_{ii})$ in linear regression; degrees of freedom is exactly additive, so per-example values sum to MacKay's effective number of parameters $\gamma$ (\cref{rem:totals}); and volume is submodular, giving a redundancy ratio $\ge 1$ for sets and an upper bound on the fraction of model information attributable to single examples (\cref{prop:submod}).
 \item We connect the totals to a Laplace two-part MDL code (\cref{sec:mdl}) and demonstrate the diagnostic on an exactly solvable model, an MLP under a prior-precision sweep, and a small vision transformer, validating against warm-started retraining and documenting where the approximation fails.
 \item We compute the same posterior in output space through the empirical neural tangent kernel, at a cost independent of the number of parameters, and refit its mean for networks that are not at a stationary point, such as those trained with dropout or early stopping (\cref{sec:kernel}). This makes the analysis practical for networks with millions of parameters and a few thousand training examples, which we use for a case study of molecular property prediction (\cref{sec:tdc}).
@@ -88,7 +88,7 @@ Two families of tools approximate pieces of this picture. Influence functions es
 
 \section{Method}
 \subsection{Setup}
-Let $\D=\{(x_i,y_i)\}_{i=1}^N$, $f(x;\theta)\in\mathbb{R}^C$ a network with $\theta\in\mathbb{R}^P$, and $\ell(y,f)=-\log p(y\mid f)$. We train a MAP estimate $\theta^*$ of
+Let $\D=\{(x_i,y_i)\}_{i=1}^N$ be a dataset of $N$ examples, let $f(x;\theta)\in\mathbb{R}^C$ be a network with $P$ parameters $\theta\in\mathbb{R}^P$ that maps an input $x$ to $C$ outputs, one per class for a softmax classifier and $C=1$ for scalar regression or a single logit, and let $\ell(y,f)=-\log p(y\mid f)$ be the loss, the negative log-likelihood of the label $y$ given those outputs. We train a MAP estimate $\theta^*$ of
 \begin{equation}
 L(\theta)=\textstyle\sum_{i=1}^N \ell\big(y_i,f(x_i;\theta)\big)+\tfrac{\alpha}{2}\|\theta\|^2,
 \label{eq:objective}
