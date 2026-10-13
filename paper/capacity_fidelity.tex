@@ -93,7 +93,7 @@ Let $\D=\{(x_i,y_i)\}_{i=1}^N$ be a dataset of $N$ examples, let $f(x;\theta)\in
 L(\theta)=\textstyle\sum_{i=1}^N \ell\big(y_i,f(x_i;\theta)\big)+\tfrac{\alpha}{2}\|\theta\|^2,
 \label{eq:objective}
 \end{equation}
-i.e., a summed loss with a Gaussian prior $\N(0,\alpha^{-1}I)$. At $\theta^*$ define the Jacobian $J_i=\partial f(x_i)/\partial\theta\in\mathbb{R}^{C\times P}$, the output-space residual $r_i=\nabla_f\ell\in\mathbb{R}^C$, and curvature $\Lambda_i=\nabla^2_f\ell\in\mathbb{R}^{C\times C}$ (for softmax, $r_i=p_i-e_{y_i}$ and $\Lambda_i=\mathrm{diag}(p_i)-p_ip_i\T$). The linearized Laplace posterior is
+i.e., a summed loss with a Gaussian prior $\N(0,\alpha^{-1}I)$. At $\theta^*$ define the Jacobian $J_i=\partial f(x_i)/\partial\theta\in\mathbb{R}^{C\times P}$, the output-space residual $r_i=\nabla_f\ell\in\mathbb{R}^C$, and curvature $\Lambda_i=\nabla^2_f\ell\in\mathbb{R}^{C\times C}$ (for softmax, $r_i=p_i-e_{y_i}$ and $\Lambda_i=\mathrm{diag}(p_i)-p_ip_i\T$, where $p_i=\mathrm{softmax}(f(x_i))\in\mathbb{R}^C$ holds the predicted class probabilities and $e_{y_i}\in\mathbb{R}^C$ is the one-hot vector of the observed class $y_i$). The linearized Laplace posterior is
 \begin{equation}
 q_\D=\N(\theta^*,\Sigma),\qquad \Sigma^{-1}=A=\textstyle\sum_i J_i\T\Lambda_iJ_i+\alpha I.
 \label{eq:laplace}
