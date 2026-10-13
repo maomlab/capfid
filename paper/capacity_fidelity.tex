@@ -185,8 +185,8 @@ One Cholesky factorization of $M$ therefore yields the identical posterior in $O
 \section{Experiments}
 The experiments in this section ran on a single CPU core in double-precision Laplace algebra; details are in \cref{app:details}. The case study of \cref{sec:tdc} is larger and is described in \cref{app:tdc}.
 
-\subsection{Exact check: Bayesian linear regression}
-We fit $N=200$ noisy samples of $\sin(2x)$ with $P=40$ random Fourier features ($\sigma=0.3$, $\alpha=1$; five targets shifted by $+2$ as outliers) and compared \cref{prop:reduction,prop:bayes} and \cref{cor:mi} with brute-force refits without each point (\cref{tab:exact}). All agree to numerical precision. Per-example degrees of freedom sum to $\tr H=9.091$ effective parameters, and outliers carry a mean of 1.34 bits versus 0.044 bits for inliers.
+\subsection{Exact check: Bayesian linear regression}\label{sec:exact}
+\Cref{app:tutorial} works this setting out from first principles; here we use it to check the implementation. We fit $N=200$ noisy samples of $\sin(2x)$ with $P=40$ random Fourier features ($\sigma=0.3$, $\alpha=1$; five targets shifted by $+2$ as outliers) and compared \cref{prop:reduction,prop:bayes} and \cref{cor:mi} with brute-force refits without each point (\cref{tab:exact}). All agree to numerical precision. Per-example degrees of freedom sum to $\tr H=9.091$ effective parameters, and outliers carry a mean of 1.34 bits versus 0.044 bits for inliers.
 
 \begin{table}[t]
 \centering\small
@@ -437,7 +437,7 @@ Capacity is the cost side of a per-example ledger. Value-of-information analyses
 \ifanonymous
 The implementation, unit tests, and scripts that regenerate every figure and table are provided as anonymized supplementary material and will be released publicly upon publication.
 \else
-The method is implemented in \texttt{capfid}, an MIT-licensed PyTorch package available at \coderepo. The repository includes unit tests that check \cref{prop:reduction,prop:bayes,prop:submod} and \cref{cor:mi} against brute-force refits and the output-space computation against the parameter-space one, the script \texttt{examples/paper/reproduce\_paper.py}, which regenerates \cref{tab:exact,tab:moons,tab:sets} and \cref{fig:moons,fig:vit,fig:val}, and \texttt{examples/tdc\_casestudy/}, which regenerates the case study (\cref{tab:tdc,tab:collisions}, \cref{fig:tdc-val,fig:tdc-ames,fig:tdc-lipo,fig:tdc-aqsol,fig:tdc-gen}). The case study's per-compound results are also published as a self-contained interactive dashboard at \dashboardurl, rebuilt from the same cached tables by \texttt{examples/tdc\_casestudy/dashboard.py}.
+The method is implemented in \texttt{capfid}, an MIT-licensed PyTorch package available at \coderepo. The repository includes unit tests that check \cref{prop:reduction,prop:bayes,prop:submod} and \cref{cor:mi} against brute-force refits and the output-space computation against the parameter-space one, the script \texttt{examples/paper/reproduce\_paper.py}, which regenerates \cref{tab:exact,tab:moons,tab:sets} and \cref{fig:moons,fig:vit,fig:val,fig:tut-unlearn,fig:tut-formulas,fig:tut-fourier}, and \texttt{examples/tdc\_casestudy/}, which regenerates the case study (\cref{tab:tdc,tab:collisions}, \cref{fig:tdc-val,fig:tdc-ames,fig:tdc-lipo,fig:tdc-aqsol,fig:tdc-gen}). The case study's per-compound results are also published as a self-contained interactive dashboard at \dashboardurl, rebuilt from the same cached tables by \texttt{examples/tdc\_casestudy/dashboard.py}.
 \fi
 
 \begingroup
@@ -704,6 +704,91 @@ C.~Zhang, S.~Bengio, M.~Hardt, B.~Recht, and O.~Vinyals.
 \endgroup
 
 \appendix
+\section{A worked example: capacity in Bayesian linear regression}\label{app:tutorial}
+
+This appendix works \cref{def:capacity} out in the simplest setting that contains all of its ingredients: linear regression with a Gaussian prior and Gaussian noise. There the Laplace posterior of \cref{eq:laplace} is not an approximation, each of the three capacities collapses to a formula in two scalars per example, and each of those formulas turns out to be a familiar object from classical regression diagnostics. The appendix is self-contained, and ends with the experiment of \cref{sec:exact}.
+
+\subsection{A posterior is a cloud of plausible weights}
+Write the model as $f(x;w)=\phi(x)\T w$, where $\phi:\mathcal{X}\to\mathbb{R}^P$ is a fixed feature map --- polynomials, random Fourier features, or the last hidden layer of a trained network. Observations are $y_i=f(x_i;w)+\varepsilon_i$ with independent noise $\varepsilon_i\sim\N(0,\sigma^2)$, and the prior is $w\sim\N(0,\alpha^{-1}I)$: before seeing data we believe each weight is of size roughly $\alpha^{-1/2}$. Stacking the $\phi(x_i)\T$ into $\Phi\in\mathbb{R}^{N\times P}$, Bayes' rule gives a Gaussian posterior
+\begin{equation}
+q_\D=\N(\hat w,\Sigma),\ \ \Sigma^{-1}=A=\tfrac{1}{\sigma^2}\Phi\T\Phi+\alpha I,\ \ \hat w=\tfrac{1}{\sigma^2}\Sigma\,\Phi\T y.
+\label{eq:tut-post}
+\end{equation}
+Here $\hat w$ is ridge regression with penalty $\alpha\sigma^2$, and $A$ is the \emph{precision}: large in directions the data pin down. This is exactly \cref{eq:laplace} with $J_i=\phi(x_i)\T$ and $\Lambda_i=\sigma^{-2}$, and nothing has been approximated, because the objective \cref{eq:objective} is exactly quadratic in $w$.
+
+Picture $q_\D$ as an ellipsoidal cloud of the weight vectors that remain plausible (\cref{fig:tut-unlearn}b). The prior is a round cloud of radius $\alpha^{-1/2}$. Every observation squeezes it, and squeezes it along one direction only, namely $\phi(x_i)$. That is the entire mechanism: the three capacities are three ways of measuring one squeeze.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/fig9_tutorial_unlearning.png}
+\caption{\textbf{What unlearning one observation does.} A straight-line fit ($P=2$, so the posterior can be drawn) to twelve points, one of which sits apart from the rest and disagrees with them. \textbf{(a)} Data space: the posterior mean with and without that point. Its residual $e_i$ is what the fit still misses after absorbing it; $e_i/(1-h_i)$ is what the fit misses when it has not seen it. \textbf{(b)} Weight space: unlearning the point inflates the posterior ellipse by $(1-h_i)^{-1/2}$ in area --- that factor, in bits, is $\Vol(\{i\})$ --- and shifts its centre by $\Delta$, which is what $\Inf(\{i\})$ adds on top of $\Vol$. \textbf{(c)} The label's own likelihood on a $\log_2$ axis, so that the two marked heights are the fidelity $F_i$ and the held-out fidelity $F_i^-$ in bits and the gap between them is the memorization. Here one point is worth half a bit of volume but costs the model $11.5$ bits of fit when it is taken away.}
+\label{fig:tut-unlearn}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.72\textwidth]{figures/fig10_tutorial_formulas.png}
+\caption{\textbf{The three capacities as functions of leverage and residual}, from \cref{eq:tut-dof,eq:tut-vol,eq:tut-inf} alone; no data are involved. \textbf{(a)} All three grow with leverage and diverge as $h\to1$, where the model is reduced to repeating the label. $\dof$ and $\Vol$ agree to first order; they differ only once $h$ is large. \textbf{(b)} The same curves in the capacity plane. A perfectly fit example ($e_i=0$) lies on $\Inf=\Vol^2$ in nats; the residual moves it vertically, by a factor of about $e_i^2/\sigma^2$ in the surprise term.}
+\label{fig:tut-formulas}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.94\textwidth]{figures/fig11_tutorial_fourier.png}
+\caption{\textbf{The three capacities across the experiment of \cref{sec:exact}}: $N=200$ noisy samples of $\sin2x$ fitted with $P=40$ random Fourier features, five of whose targets are shifted by $+2$ (red). \textbf{(a)} The fit, with a $2\sigma$ posterior band. \textbf{(b)} Degrees of freedom $\dof(\{i\})=h_i$, a function of $x$ alone, summing to $\gamma=9.091$ of the 40 nominal parameters. \textbf{(c)} $\Vol$ (line) and $\Inf$ (points) against $x$: volume is label-free and smooth, while information varies over three decades at the same input according to the residual. \textbf{(d)} The capacity plane, coloured by $|e_i|/\sigma$. The dash-dotted line $\Inf=\Vol^2$ (in nats) is the floor reached only by a perfectly fit example; the outliers sit two decades above it at ordinary volume.}
+\label{fig:tut-fourier}
+\end{figure*}
+
+\subsection{Unlearning one observation, and leverage}
+To unlearn example $i$ we subtract its contribution to the precision, $A_{-i}=A-\sigma^{-2}\phi_i\phi_i\T$ (\cref{eq:unlearn}), and recentre the cloud on the ridge estimate of the remaining $N-1$ points. The cloud grows, because less data constrains $w$ less, and it moves, because the remaining points prefer a slightly different $w$ (\cref{fig:tut-unlearn}b).
+
+A single number governs the growth. Define the \emph{leverage}
+\begin{equation}
+h_i=\frac{\phi_i\T\Sigma\,\phi_i}{\sigma^2}\in[0,1),
+\label{eq:tut-lev}
+\end{equation}
+the posterior variance of the model's prediction at $x_i$, in units of the noise variance; it is the scalar $K_{\{i\}}$ of \cref{prop:reduction}. It is also the $i$th diagonal entry of the ridge hat matrix $H=\Phi(\Phi\T\Phi+\alpha\sigma^2I)^{-1}\Phi\T$, which maps labels to fitted values, $\hat f=Hy$. Hence
+\begin{equation}
+h_i=\frac{\partial \hat f_i}{\partial y_i}:
+\end{equation}
+leverage is the fraction of its own label that the fitted value echoes back. When $h_i\approx0$ the prediction at $x_i$ is dictated by the other examples; when $h_i\to1$ the model simply repeats $y_i$. Leverage is large where the data are sparse --- the ends of the $x$ range in \cref{fig:tut-fourier}b --- and where $\phi(x_i)$ points somewhere no other example does.
+
+Two classical identities fall out of the same algebra, both exact here:
+\begin{align}
+y_i-f(x_i;\hat w_{-i})&=\frac{e_i}{1-h_i},\qquad e_i=y_i-\hat f_i,\label{eq:tut-press}\\
+\textstyle\sum_i h_i&=\tr H=\gamma.\label{eq:tut-gamma}
+\end{align}
+\Cref{eq:tut-press} is the PRESS formula: what the model would have predicted had it never seen example $i$ costs nothing beyond knowing $h_i$. \Cref{eq:tut-gamma} says the leverages are shares of a budget --- the effective number of parameters --- which runs from $0$ under a strong prior to $\min(N,P)$ under a flat one.
+
+\subsection{The three capacities}
+Putting $C=1$, $J_i=\phi_i\T$, $\Lambda_i=\sigma^{-2}$ and $r_i=-e_i/\sigma^2$ into \cref{prop:reduction} gives, for a single example,
+\begin{align}
+\dof(\{i\})&=h_i,\label{eq:tut-dof}\\
+\Vol(\{i\})&=-\tfrac12\log_2(1-h_i),\label{eq:tut-vol}\\
+\Inf(\{i\})&=\frac{1}{2\ln2}\Big[\underbrace{\frac{e_i^2}{\sigma^2}\,\frac{h_i}{1-h_i}}_{\text{surprise}}\underbrace{-h_i-\log(1-h_i)}_{\text{shape}}\Big].\label{eq:tut-inf}
+\end{align}
+Everything an example costs this model is therefore a function of just two numbers: where it sits, through $h_i$, and how wrong the fit is there, through $e_i$ (\cref{fig:tut-formulas}).
+
+\paragraph{Degrees of freedom} is the leverage itself, measured in parameters rather than bits. By \cref{eq:tut-gamma} it is example $i$'s share of the $\gamma$ parameters the data actually determine, which is why the per-example values sum to a model-level quantity.
+
+\paragraph{Volume} is measured in bits. Unlearning example $i$ is a rank-one change to the precision, so the cloud grows in exactly one direction --- by the factor $(1-h_i)^{-1/2}$ --- and is unchanged in the $P-1$ directions conjugate to $\phi_i$. The ellipsoid's volume therefore grows by that same factor, and $\Vol(\{i\})$ is its base-2 logarithm (\cref{fig:tut-unlearn}b). One bit of volume means the example halves the set of weight vectors that remain plausible. Note what is \emph{not} in \cref{eq:tut-vol}: the label. Volume is settled by where an example sits in feature space, before anyone reads $y_i$. \Cref{cor:mi} says what it then is --- the information the model would gain from \emph{any} plausible label at that location, averaged over them --- which is why we call it the capacity allotted to an input rather than the capacity used.
+
+\paragraph{Information} is the one that reads the label, through the surprise term, which is the squared length of the mean shift $\Delta$ of \cref{fig:tut-unlearn}b in the metric of the unlearned posterior. The shape term is what is left when the label is exactly as predicted, and for small $h$ it is $h^2/(4\ln2)$ while $\Vol$ is $h/(2\ln2)$: a well-fit example has $\Inf\approx\Vol^2$ in nats. That square is the floor in \cref{fig:tut-formulas}b and \cref{fig:tut-fourier}d, the locus of examples that occupy volume but store nothing, and a residual of a couple of $\sigma$ lifts an example orders of magnitude above it.
+
+\subsection{Fidelity, held-out fidelity, and memorization}
+Fidelity is just the log-likelihood of the label under the fitted model, $F_i=-e_i^2/(2\sigma^2\ln2)-\tfrac12\log_2(2\pi\sigma^2)$, and by \cref{eq:tut-press} the held-out fidelity $F_i^-$ is the same expression with $e_i$ replaced by $e_i/(1-h_i)$. Their difference,
+\begin{equation}
+F_i-F_i^-=\frac{e_i^2}{2\sigma^2\ln2}\Big[\frac{1}{(1-h_i)^2}-1\Big],
+\end{equation}
+is the memorization: the bits of its own label an example loses when the model has not seen it. It needs \emph{both} ingredients. A badly fit example in a crowded region ($e_i$ large, $h_i\approx0$) is simply misfit, and removing it changes nothing; a well-fit example on its own ($h_i$ large, $e_i\approx0$) is predicted by the rest of the data anyway. Only an example that is both isolated and surprising is memorized.
+
+\subsection{The experiment of \texorpdfstring{\cref{sec:exact}}{Section 4.1}}
+\Cref{fig:tut-fourier} is that experiment: $N=200$ noisy samples of $\sin2x$, $P=40$ random Fourier features, $\sigma=0.3$, $\alpha=1$, and five targets shifted by $+2$. Panel (b) plots the leverage. It depends on $x$ alone and is largest at the ends of the range, where there are no neighbours on one side; the five outliers are unremarkable in it, because shifting a label does not move the example in feature space. Panel (c) contrasts $\Vol$ and $\Inf$ at the same inputs: $\Vol$ is a smooth curve through $x$, while $\Inf$ scatters over three decades at any given $x$ according to the residual there, and the outliers sit two decades above the rest. Panel (d) is the capacity plane: the bulk lies in a band above the perfect-fit floor set by the noise, and the outliers lie far above it at ordinary volume. The five carry a mean $\Inf$ of $1.34$ bits against $0.044$ bits for the rest (\cref{sec:exact}).
+
+Computing \cref{eq:tut-dof,eq:tut-vol,eq:tut-inf} from $h_i$ and $e_i$ alone and comparing with what \texttt{capfid} returns from the general parameter-space algorithm agrees to $3.2\times10^{-13}$ bits over all 200 examples, and \cref{tab:exact} compares the same quantities against brute-force refits without each point.
+
+\paragraph{What survives beyond this example.} Nothing in \cref{def:capacity} assumed a linear model. For a network, \cref{eq:laplace} replaces the exact posterior by the Gaussian matching the curvature of $L$ at $\theta^*$, the scalar $h_i$ becomes the $C\times C$ matrix $K_{\{i\}}=\Lambda_i^{1/2}J_i\Sigma J_i\T\Lambda_i^{1/2}$, and \cref{eq:tut-dof,eq:tut-vol,eq:tut-inf} become the trace, log-determinant and quadratic form of \cref{prop:reduction}. The interpretations above carry over unchanged. What does not carry over is exactness: \cref{eq:tut-press} becomes a single Newton step rather than an identity, which is accurate for typical examples and optimistic for heavily memorized ones (\cref{fig:val}) --- the main limitation of the method. \Cref{sec:kernel} describes what to do when the network is not at a mode, so that $\nabla L(\theta^*)\ne0$ and even the Newton step misattributes the leftover gradient.
+
 \section{Proofs}\label{app:proofs}
 \paragraph{\Cref{prop:reduction}.} Write $H_S=J_S\T\Lambda_SJ_S$ so $A_{-S}=A-H_S$. (i) $\dof(S)=\tr(\Sigma H_S)=\tr(\Lambda_S^{1/2}J_S\Sigma J_S\T\Lambda_S^{1/2})=\tr K_S$ by cyclicity. (ii) With $h(\N(\mu,C))=\tfrac12\logdet(2\pi eC)$, $\Vol(S)=\tfrac12[\logdet A-\logdet A_{-S}]=-\tfrac12\logdet(I_P-\Sigma H_S)=-\tfrac12\logdet(I_{mC}-K_S)$ by Sylvester's identity $\det(I_P-UW)=\det(I_{mC}-WU)$ with $U=\Sigma J_S\T\Lambda_S^{1/2}$, $W=\Lambda_S^{1/2}J_S$. (iii) For Gaussians, $\KL(\N(\mu_0,A^{-1})\|\N(\mu_1,A_{-S}^{-1}))=\tfrac12[\tr(A_{-S}\Sigma)-P+\Delta\T A_{-S}\Delta+\logdet A-\logdet A_{-S}]$ with $\Delta=\mu_1-\mu_0=A_{-S}^{-1}J_S\T r_S$. Here $\tr(A_{-S}\Sigma)-P=-\tr(H_S\Sigma)=-\tr K_S$ and $\Delta\T A_{-S}\Delta=r_S\T J_SA_{-S}^{-1}J_S\T r_S=r_S\T S_{-S}r_S$. (iv) Woodbury gives $A_{-S}^{-1}=\Sigma+\Sigma J_S\T\Lambda_S^{1/2}(I-K_S)^{-1}\Lambda_S^{1/2}J_S\Sigma$; pre- and post-multiplying by $J_S$ and $J_S\T$ yields $S_{-S}$. The linearized held-out logits are $f(x_S)+J_S\Delta=f(x_S)+S_{-S}r_S$. \qed
 

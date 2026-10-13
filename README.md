@@ -13,7 +13,9 @@ the example is *unlearned*.
 **Manuscript:** *How Many Bits Does a Training Example Cost? Per-Example Capacity versus
 Fidelity via Linearized Laplace Unlearning*. [PDF](paper/capacity_fidelity.pdf) (preprint;
 arXiv link to follow). Every figure and table can be regenerated with
-[`examples/paper/reproduce_paper.py`](examples/paper/reproduce_paper.py).
+[`examples/paper/reproduce_paper.py`](examples/paper/reproduce_paper.py). Appendix A is a
+worked example that derives the three capacities from scratch in Bayesian linear regression,
+where they reduce to the leverage of the ridge hat matrix and the PRESS residual.
 
 ![Two moons with flipped labels: as the prior weakens, flipped examples move from ignored to memorized](paper/figures/fig1_moons_capacity_vs_fidelity.png)
 

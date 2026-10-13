@@ -2,7 +2,9 @@
 reproduce_paper.py — regenerate every figure and number in the capfid manuscript.
 
   0. Bayesian linear regression: Laplace is exact here, so every formula is checked
-     against brute-force leave-one-out refits.
+     against brute-force leave-one-out refits, and against the scalar closed forms
+     (leverage + residual) derived in the appendix. Also draws the three tutorial
+     figures that explain dof, volume and information from scratch.
   1. Two moons + 10% flipped labels, small tanh MLP, prior precision α swept:
      the compression knob. Watch flipped points move from "ignored" to "memorized".
   2. Tiny Vision Transformer on sklearn 8x8 digits + 5% flipped labels:
@@ -95,6 +97,8 @@ def sanity_linear():
     print(f"  max |entropy − (−½log2(1−h_ii))|          = {np.abs(pw['volume_bits'] + 0.5 * np.log2(1 - lev)).max():.2e} bits")
     print(f"  Σ dof_i = {pw['dof'].sum():.3f}  = tr(hat) = {lev.sum():.3f}  (effective # params of {D})")
     print(f"  outliers: mean KL {pw['information_bits'][:5].mean():.2f} bits vs inliers {pw['information_bits'][5:].mean():.3f} bits")
+    return dict(x=x.numpy().ravel(), Phi=Phi.numpy(), y=y.numpy().ravel(), sigma=sigma,
+                alpha=alpha, pw=pw, n_out=5)
 
 
 # ============================================================================ #
@@ -395,6 +399,245 @@ def fig_validation(results, pws):
     plt.close(fig)
 
 
+# ============================================================================ #
+# 4. Tutorial figures for the worked example in the appendix
+#
+# Linear regression with a Gaussian prior is the one setting where the three
+# capacities have elementary closed forms in terms of two scalars per point: the
+# leverage h_i and the residual e_i. These functions implement those formulas
+# directly (no capfid calls), which is also a check on the package.
+# ============================================================================ #
+def ridge_posterior(Phi, y, sigma, alpha):
+    """Exact posterior of w for y = Phi w + N(0, sigma^2 I) under w ~ N(0, alpha^-1 I)."""
+    A = Phi.T @ Phi / sigma ** 2 + alpha * np.eye(Phi.shape[1])
+    Sigma = np.linalg.inv(A)
+    return Sigma @ Phi.T @ y / sigma ** 2, Sigma, A
+
+
+def closed_forms(Phi, y, sigma, alpha):
+    """Every per-point quantity from the leverage h_i and the residual e_i alone.
+
+    h_i = phi_i' Sigma phi_i / sigma^2 is the ridge hat-matrix diagonal, and
+      dof = h,  Vol = -log2(1-h)/2,  I = [e^2/sigma^2 * h/(1-h) - h - log(1-h)] / (2 ln 2),
+    with leave-one-out residual e/(1-h) (the PRESS formula).
+    """
+    w, Sigma, A = ridge_posterior(Phi, y, sigma, alpha)
+    h = np.einsum("ij,jk,ik->i", Phi, Sigma, Phi) / sigma ** 2
+    e = y - Phi @ w
+    norm = -0.5 * np.log2(2 * np.pi * sigma ** 2)
+    return dict(
+        h=h, e=e, w=w, Sigma=Sigma, A=A, dof=h,
+        volume_bits=-0.5 * np.log2(1 - h),
+        information_bits=0.5 * (e ** 2 / sigma ** 2 * h / (1 - h) - h - np.log(1 - h)) / LN2,
+        fidelity_bits=norm - 0.5 * e ** 2 / sigma ** 2 / LN2,
+        heldout_fidelity_bits=norm - 0.5 * (e / (1 - h)) ** 2 / sigma ** 2 / LN2)
+
+
+def ellipse(ax, mean, cov, nsig=2.0, **kw):
+    vals, vecs = np.linalg.eigh(cov)
+    t = np.linspace(0, 2 * np.pi, 200)
+    pts = mean[:, None] + nsig * vecs @ (np.sqrt(vals)[:, None] * np.vstack([np.cos(t), np.sin(t)]))
+    ax.plot(*pts, **kw)
+
+
+def tutorial_unlearning(sigma=0.5, alpha=0.4, seed=10):
+    """Figure: what removing one observation does, in data space, weight space, and to the
+    likelihood of the removed label. A straight-line fit (P=2) so the posterior can be drawn.
+    Seed 10 is the first whose clean residuals all fall within 1.1 sigma, so the figure shows
+    one unusual point rather than several."""
+    rng = np.random.default_rng(seed)
+    x = np.r_[np.linspace(-1.6, 1.0, 11), 2.4]           # the last point sits on its own
+    y = 0.4 + 0.9 * x + sigma * rng.standard_normal(len(x))
+    y[-1] += 3.0                                          # ... and disagrees with the rest
+    Phi = np.c_[np.ones_like(x), x]
+    i = len(x) - 1
+    c = closed_forms(Phi, y, sigma, alpha)
+    w, Sigma, A = c["w"], c["Sigma"], c["A"]
+    A_i = A - np.outer(Phi[i], Phi[i]) / sigma ** 2       # unlearn point i
+    Sigma_i = np.linalg.inv(A_i)
+    keep = np.arange(len(x)) != i
+    w_i = Sigma_i @ Phi[keep].T @ y[keep] / sigma ** 2
+    h, e = c["h"][i], c["e"][i]
+
+    fig, axes = plt.subplots(1, 3, figsize=(11.2, 3.3))
+    # (a) data space
+    ax = axes[0]
+    xs = np.linspace(-2.2, 3.0, 200)
+    Ps = np.c_[np.ones_like(xs), xs]
+    sd = np.sqrt(np.einsum("ij,jk,ik->i", Ps, Sigma, Ps))
+    ax.fill_between(xs, Ps @ w - 2 * sd, Ps @ w + 2 * sd, color=CLEAN, alpha=0.15, lw=0)
+    ax.plot(xs, Ps @ w, color=CLEAN, lw=1.8, label="posterior mean, all $N$ points")
+    ax.plot(xs, Ps @ w_i, color=FLIP, lw=1.6, ls="--", label="... without point $i$")
+    ax.scatter(x[keep], y[keep], s=22, c="0.3", zorder=3)
+    ax.scatter([x[i]], [y[i]], s=70, facecolors="none", edgecolors=FLIP, lw=1.8, zorder=4)
+    ax.annotate("", xy=(x[i] - 0.14, y[i]), xytext=(x[i] - 0.14, Phi[i] @ w),
+                arrowprops=dict(arrowstyle="<->", color=CLEAN, lw=1.2))
+    ax.annotate("", xy=(x[i] + 0.14, y[i]), xytext=(x[i] + 0.14, Phi[i] @ w_i),
+                arrowprops=dict(arrowstyle="<->", color=FLIP, lw=1.2))
+    ax.text(x[i] - 0.26, (y[i] + Phi[i] @ w) / 2, "$e_i$", color=CLEAN, ha="right",
+            va="center", fontsize=10)
+    ax.text(x[i] + 0.26, (y[i] + Phi[i] @ w_i) / 2, r"$\dfrac{e_i}{1-h_i}$", color=FLIP,
+            ha="left", va="center", fontsize=10)
+    ax.set_xlim(-2.3, 3.6)
+    ax.set_xlabel("$x$"), ax.set_ylabel("$y$")
+    ax.set_title(f"(a) data space: point $i$ has leverage $h_i$ = {h:.2f}", fontsize=9)
+    ax.legend(fontsize=7, frameon=False, loc="upper left")
+    # (b) weight space
+    ax = axes[1]
+    ellipse(ax, w, Sigma, color=CLEAN, lw=1.8, label="posterior $q_{\\mathcal{D}}$")
+    ellipse(ax, w_i, Sigma_i, color=FLIP, ls="--", lw=1.6,
+            label="$q_{\\mathcal{D}\\setminus i}$, point $i$ unlearned")
+    ax.annotate("", xy=w_i, xytext=w, arrowprops=dict(arrowstyle="->", color="0.2", lw=1.4))
+    ax.text(*((w + w_i) / 2 + np.array([0.012, 0.0])), r"$\Delta$", fontsize=10, color="0.2")
+    ax.scatter(*w, s=18, c=CLEAN, zorder=4), ax.scatter(*w_i, s=18, c=FLIP, zorder=4)
+    ax.set_xlabel("intercept $w_1$"), ax.set_ylabel("slope $w_2$")
+    # the ellipse's area scales as sqrt(det Sigma), so the ratio is (1-h)^(-1/2) = 2^V
+    ax.set_title(f"(b) weight space (2$\\sigma$ ellipses): area $\\times$"
+                 f"{(1 - h) ** -0.5:.2f} $= 2^{{\\mathcal{{V}}}}$, "
+                 f"$\\mathcal{{V}}$ = {c['volume_bits'][i]:.2f} bits", fontsize=9)
+    ax.legend(fontsize=7, frameon=False, loc="upper left")
+    # (c) fidelity of the label itself. Plotted as log2 density, so the two marked heights are
+    # exactly F_i and F_i^-, and the gap between them is the memorization.
+    ax = axes[2]
+    g = np.linspace(y[i] - 4.5 * sigma, y[i] + 2.0 * sigma, 300)
+    lg = lambda m: (-0.5 * (g - m) ** 2 / sigma ** 2) / LN2 - 0.5 * np.log2(2 * np.pi * sigma ** 2)
+    fi, fi_ = Phi[i] @ w, Phi[i] @ w_i
+    ax.plot(g, lg(fi), color=CLEAN, lw=1.8, label="$\\log_2 p(y\\,|\\,\\hat f_i)$, trained on $i$")
+    ax.plot(g, lg(fi_), color=FLIP, lw=1.6, ls="--",
+            label="$\\log_2 p(y\\,|\\,\\hat f_i^{-})$, without $i$")
+    F, Fm = c["fidelity_bits"][i], c["heldout_fidelity_bits"][i]
+    for v, col in ((F, CLEAN), (Fm, FLIP)):
+        ax.scatter([y[i]], [v], s=30, color=col, zorder=4)
+    ax.annotate("", xy=(y[i], F), xytext=(y[i], Fm),
+                arrowprops=dict(arrowstyle="<->", color="0.2", lw=1.3))
+    ax.text(y[i] - 0.08, (F + Fm) / 2, f"memorization\n{F - Fm:.1f} bits", fontsize=8,
+            ha="right", va="center")
+    ax.axvline(y[i], color="0.6", lw=0.8)
+    ax.text(y[i] + 0.08, Fm + 1.0, "observed $y_i$", fontsize=8, ha="left", va="bottom",
+            rotation=90)
+    ax.set_ylim(Fm - 4, F + 3)
+    ax.set_xlabel("$y$"), ax.set_ylabel("$\\log_2$ density [bits]")
+    ax.set_title(f"(c) fidelity $F_i$ = {F:.2f} bits, held-out $F_i^-$ = {Fm:.2f};\n"
+                 f"$\\mathcal{{I}}$ = {c['information_bits'][i]:.2f} bits", fontsize=9)
+    ax.legend(fontsize=7, frameon=False, loc="upper left")
+    fig.tight_layout()
+    fig.savefig(f"{OUT}/fig9_tutorial_unlearning.png", dpi=160)
+    plt.close(fig)
+    print(f"  one point, P=2 line fit: h={h:.3f}, e={e:.3f}, dof={h:.3f}, "
+          f"V={c['volume_bits'][i]:.3f} bits, I={c['information_bits'][i]:.3f} bits, "
+          f"memorization={F - Fm:.3f} bits")
+
+
+def tutorial_formulas():
+    """Figure: the three capacities as functions of leverage and residual, from the scalar
+    formulas alone. No data: these are the curves every linear-Gaussian problem follows."""
+    h = np.linspace(1e-4, 0.96, 400)
+    vol = -0.5 * np.log2(1 - h)
+    cov_part = 0.5 * (-h - np.log(1 - h)) / LN2                 # the label-free part of I
+    res = [(0.0, "-"), (1.0, "--"), (3.0, ":")]
+    fig, axes = plt.subplots(1, 2, figsize=(7.6, 3.1))
+    ax = axes[0]
+    ax.plot(h, h, color="0.35", lw=1.8, label=r"$\mathrm{dof}=h$")
+    ax.plot(h, vol, color=CLEAN, lw=1.8, label=r"$\mathcal{V}=-\frac{1}{2}\log_2(1-h)$")
+    for z, ls in res:
+        ax.plot(h, cov_part + 0.5 * z ** 2 * h / (1 - h) / LN2, color=FLIP, ls=ls, lw=1.5,
+                label=rf"$\mathcal{{I}}$,  $|e|/\sigma={z:g}$")
+    ax.set_yscale("log"), ax.set_ylim(1e-4, 60)
+    ax.set_xlabel("leverage $h_i$"), ax.set_ylabel("bits (dof in parameters)")
+    ax.set_title("(a) everything is a function of $h$ and $e$", fontsize=9)
+    ax.legend(fontsize=6.5, frameon=False, loc="upper left", ncol=2)
+    ax = axes[1]
+    for z, ls in res:
+        ax.plot(vol, cov_part + 0.5 * z ** 2 * h / (1 - h) / LN2, color=FLIP, ls=ls, lw=1.5,
+                label=rf"$|e|/\sigma={z:g}$")
+    ax.plot(vol, LN2 * vol ** 2, color="0.35", lw=1.2, ls="-.",
+            label=r"$\mathcal{I}=\mathcal{V}^2$ (nats)")
+    ax.set_xscale("log"), ax.set_yscale("log")
+    ax.set_xlim(1e-3, 3), ax.set_ylim(1e-6, 60)
+    ax.set_xlabel(r"volume $\mathcal{V}$ [bits]"), ax.set_ylabel(r"information $\mathcal{I}$ [bits]")
+    ax.set_title("(b) a well-fit point occupies volume\nbut stores little", fontsize=9)
+    ax.legend(fontsize=6.5, frameon=False, loc="upper left")
+    fig.tight_layout()
+    fig.savefig(f"{OUT}/fig10_tutorial_formulas.png", dpi=160)
+    plt.close(fig)
+
+
+def tutorial_fourier(prob):
+    """Figure: the three capacities across the sin(2x) + random-Fourier-features experiment of
+    the exact check, which is the same problem solved in closed form."""
+    x, Phi, y, sigma, alpha = (prob[k] for k in ("x", "Phi", "y", "sigma", "alpha"))
+    c = closed_forms(Phi, y, sigma, alpha)
+    out = np.zeros(len(x), bool)
+    out[:prob["n_out"]] = True                                  # the shifted targets
+    o = np.argsort(x)
+    fig, axes = plt.subplots(2, 2, figsize=(10.4, 5.6))
+    # (a) the fit
+    ax = axes[0, 0]
+    sd = np.sqrt(np.einsum("ij,jk,ik->i", Phi, c["Sigma"], Phi))
+    ax.fill_between(x[o], (Phi @ c["w"] - 2 * sd)[o], (Phi @ c["w"] + 2 * sd)[o],
+                    color=CLEAN, alpha=0.2, lw=0)
+    ax.plot(x[o], (Phi @ c["w"])[o], color=CLEAN, lw=1.6, label="posterior mean")
+    ax.scatter(x[~out], y[~out], s=10, c="0.45", label="data")
+    ax.scatter(x[out], y[out], s=42, facecolors="none", edgecolors=FLIP, lw=1.5, label="outliers")
+    ax.set_xlabel("$x$"), ax.set_ylabel("$y$")
+    ax.set_title(r"(a) $N=200$ noisy samples of $\sin 2x$, $P=40$ Fourier features", fontsize=9)
+    ax.legend(fontsize=7, frameon=False)
+    # (b) leverage
+    ax = axes[0, 1]
+    ax.scatter(x[~out], c["dof"][~out], s=10, c="0.45")
+    ax.scatter(x[out], c["dof"][out], s=42, facecolors="none", edgecolors=FLIP, lw=1.5)
+    ax.set_xlabel("$x$"), ax.set_ylabel(r"$\mathrm{dof}(\{i\}) = h_i$")
+    ax.set_title(rf"(b) degrees of freedom: $\sum_i h_i = \gamma = {c['dof'].sum():.3f}$ "
+                 f"of $P=40$", fontsize=9)
+    # (c) volume and information along x
+    ax = axes[1, 0]
+    ax.plot(x[o], c["volume_bits"][o], color=CLEAN, lw=1.6, label=r"$\mathcal{V}$ (label-free)")
+    ax.scatter(x[~out], c["information_bits"][~out], s=10, c="0.45",
+               label=r"$\mathcal{I}$, clean points")
+    ax.scatter(x[out], c["information_bits"][out], s=50, marker="D", facecolors="none",
+               edgecolors=FLIP, lw=1.5, label=r"$\mathcal{I}$, outliers")
+    ax.set_yscale("log"), ax.set_ylim(2e-4, 8)
+    ax.set_xlabel("$x$"), ax.set_ylabel("bits")
+    ax.set_title("(c) volume is a smooth function of $x$ alone;\n"
+                 "information scatters over three decades at the same $x$", fontsize=9)
+    ax.legend(fontsize=6.5, frameon=False, ncol=3, loc="upper center")
+    # (d) the capacity plane
+    ax = axes[1, 1]
+    z = np.abs(c["e"]) / sigma
+    sc = ax.scatter(c["volume_bits"], c["information_bits"], s=16, c=z, cmap="viridis",
+                    norm=matplotlib.colors.Normalize(0, 4), lw=0)
+    ax.scatter(c["volume_bits"][out], c["information_bits"][out], s=52, marker="D",
+               facecolors="none", edgecolors=FLIP, lw=1.4)
+    v = np.linspace(c["volume_bits"].min(), c["volume_bits"].max(), 100)
+    ax.plot(v, LN2 * v ** 2, "k-.", lw=1.0,
+            label=r"$\mathcal{I}=\mathcal{V}^2$ (nats): a perfect fit, $e_i=0$")
+    ax.set_xscale("log"), ax.set_yscale("log")
+    ax.set_xlabel(r"volume $\mathcal{V}(\{i\})$ [bits]")
+    ax.set_ylabel(r"information $\mathcal{I}(\{i\})$ [bits]")
+    ax.set_title("(d) the capacity plane: the residual lifts a point\n"
+                 "off the perfect-fit floor", fontsize=9)
+    ax.legend(fontsize=6.5, frameon=False, loc="lower right")
+    fig.colorbar(sc, ax=ax, label=r"$|e_i|/\sigma$", fraction=0.046)
+    fig.tight_layout()
+    fig.savefig(f"{OUT}/fig11_tutorial_fourier.png", dpi=160)
+    plt.close(fig)
+    pw = prob["pw"]
+    err = {k: np.abs(c[k] - pw[k]).max() for k in
+           ("dof", "volume_bits", "information_bits", "fidelity_bits", "heldout_fidelity_bits")}
+    print("  closed forms (h, e only) vs capfid, max abs error over 200 points:")
+    for k, v in err.items():
+        print(f"    {k:<24s} {v:.2e}")
+    return max(err.values())
+
+
+def tutorial():
+    print("\n== 4. Worked example for the appendix ==")
+    prob = sanity_linear()
+    tutorial_unlearning()
+    tutorial_formulas()
+    return tutorial_fourier(prob)
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", default="figures", help="directory for figures")
@@ -405,7 +648,7 @@ if __name__ == "__main__":
     if args.quick:
         CFG.update(QUICK)
     torch.set_num_threads(max(1, os.cpu_count() or 1))
-    sanity_linear()
+    tutorial()                       # includes the exact check of section 4.1
     Xm, ym, flm, keep = demo_moons()
     Xv, yv, flv, vit, la_v, pw_v, a_vit = demo_vit()
 
