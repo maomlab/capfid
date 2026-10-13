@@ -84,6 +84,8 @@ Two families of tools approximate pieces of this picture. Influence functions es
 
 \paragraph{Data valuation, scaling laws, and large language models.} Data valuation in machine learning assigns each example a share of held-out performance, for example through Shapley values \citep{ghorbani2019} or gradient tracing \citep{pruthi2020}. \citet{covert2024} found that an example's marginal contribution to performance shrinks log-linearly with the size of the dataset it joins, with example-specific exponents: some examples matter most in small datasets and others remain useful in large ones. Our capacity is an information-theoretic counterpart of their marginal contribution, evaluated at the full dataset (a subset of size $N-1$) and measured as information stored rather than held-out loss. With curvatures held at $\theta^*$, \cref{prop:submod} implies that an example's marginal volume can only shrink as the dataset it joins grows, the diminishing returns their scaling laws quantify, and the Laplace approximation gives this marginal volume in closed form for any subset, so information-scaling curves could be traced without retraining. At the largest scale, influence functions with eigenvalue-corrected Kronecker-factored curvature have been applied to language models with up to 52 billion parameters to trace behaviors back to pretraining documents \citep{grosse2023}. The same curvature approximations are the natural route to scaling our capacity measures (\cref{sec:compute}).
 
+\paragraph{Local surrogates and feature attribution.} A large explainability literature asks what a prediction depends on rather than what a training example costs. LIME explains one prediction by fitting an interpretable surrogate, typically a sparse linear model, to the black box in a neighborhood of the input, on the premise that a model too complicated to describe globally is simple enough to describe locally \citep{ribeiro2016}. We adopt the same premise in weight space rather than input space: \cref{eq:laplace} replaces the network by a surrogate that is linear in $\theta$ near $\theta^*$, and every quantity we report is read off that surrogate. The two differ in what the surrogate is local to and what it yields. LIME's is local to one input, fit by sampling perturbations of it, and yields a feature attribution; ours is local to one parameter vector, obtained from the curvature of the training objective, and yields a posterior, which is what lets us delete data from it in closed form and report the result in bits. SHAP attributes a prediction to features by the Shapley value of a cooperative game among them, whose payoff is the model's expected output, or its performance in loss-based variants, when a coalition of features is supplied and the rest are withheld \citep{lundberg2017}; the same game played over training examples rather than features is Data Shapley \citep{ghorbani2019}. We hold the features fixed and withhold data instead, and we report two quantities in place of a single payoff: the capacity a set of examples occupies and the fidelity with which it is fit, so that an example a model fits for free and one it fits by spending capacity are distinguished rather than summarized by one number. We also evaluate a single coalition, the full training set, instead of averaging over all of them. That is why a score costs one posterior and no refitting, and also why it is conservative: by \cref{prop:submod} leave-one-out marginals undercount the total, and the Shapley-style average over removal orders that would distribute $\Vol_{\mathrm{tot}}$ exactly remains an extension.
+
 \section{Method}
 \subsection{Setup}
 Let $\D=\{(x_i,y_i)\}_{i=1}^N$, $f(x;\theta)\in\mathbb{R}^C$ a network with $\theta\in\mathbb{R}^P$, and $\ell(y,f)=-\log p(y\mid f)$. We train a MAP estimate $\theta^*$ of
@@ -616,6 +618,11 @@ D.~V. Lindley.
 \newblock On a measure of the information provided by an experiment.
 \newblock \emph{The Annals of Mathematical Statistics}, 27(4):986--1005, 1956.
 
+\bibitem[Lundberg and Lee(2017)]{lundberg2017}
+S.~M. Lundberg and S.-I. Lee.
+\newblock A unified approach to interpreting model predictions.
+\newblock In \emph{NeurIPS}, 2017.
+
 \bibitem[MacKay(1992)]{mackay1992}
 D.~J.~C. MacKay.
 \newblock A practical {B}ayesian framework for backpropagation networks.
@@ -655,6 +662,11 @@ H.~Raiffa and R.~Schlaifer.
 C.~E. Rasmussen and C.~K.~I. Williams.
 \newblock \emph{Gaussian Processes for Machine Learning}.
 \newblock MIT Press, 2006.
+
+\bibitem[Ribeiro et~al.(2016)Ribeiro, Singh, and Guestrin]{ribeiro2016}
+M.~T. Ribeiro, S.~Singh, and C.~Guestrin.
+\newblock ``Why should {I} trust you?'': Explaining the predictions of any classifier.
+\newblock In \emph{KDD}, 2016.
 
 \bibitem[Rissanen(1978)]{rissanen1978}
 J.~Rissanen.
